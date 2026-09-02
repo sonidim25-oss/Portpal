@@ -261,3 +261,142 @@ fn extract_project_name(path: &Option<String>) -> Option<String> {
         .and_then(|n| n.to_str())
         .map(|s| s.to_string())
 }
+
+// ─── Test helpers (pure, no OS calls) ───────────────────────────────────────
+
+#[cfg(test)]
+pub(crate) fn parse_netstat_port(addr: &str) -> Option<u16> {
+    addr.rsplit(':').next()?.parse().ok()
+}
+
+#[cfg(test)]
+pub(crate) fn parse_lsof_name_parts(parts: &[&str]) -> Option<u16> {
+    if parts.len() < 9 {
+        return None;
+    }
+    let mut idx = parts.len() - 1;
+    if parts[idx].starts_with('(') {
+        if idx == 0 {
+            return None;
+        }
+        idx -= 1;
+    }
+    let name = parts[idx];
+    name.rsplit(':').next()?.parse().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn extract_project_name_some() {
+        let p = Some("C:/Users/123da/PycharmProjects/PortPal".to_string());
+        assert_eq!(extract_project_name(&p), Some("PortPal".to_string()));
+        let p2 = Some("C:/a/b/c".to_string());
+        assert_eq!(extract_project_name(&p2), Some("c".to_string()));
+    }
+
+    #[test]
+    fn extract_project_name_none() {
+        assert_eq!(extract_project_name(&None), None);
+        let p = Some("".to_string());
+        // Path::new("").file_name() == None
+        assert_eq!(extract_project_name(&p), None);
+    }
+
+    #[test]
+    fn find_project_root_direct_marker() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("package.json"), "{}").unwrap();
+        let sub = dir.path().join("a/b");
+        fs::create_dir_all(&sub).unwrap();
+        let found = find_project_root(&sub);
+        assert_eq!(found, Some(dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn find_project_root_cargo_toml() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "[package]").unwrap();
+        let found = find_project_root(dir.path());
+        assert_eq!(found, Some(dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn find_project_root_git_marker() {
+        let dir = tempdir().unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        let found = find_project_root(dir.path());
+        assert_eq!(found, Some(dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn find_project_root_none_within_6_levels() {
+        let dir = tempdir().unwrap();
+        let deep = dir.path().join("a/b/c/d/e/f/g");
+        fs::create_dir_all(&deep).unwrap();
+        // marker only at top, but deep is 7 levels down -> not found
+        fs::write(dir.path().join("package.json"), "{}").unwrap();
+        let found = find_project_root(&deep);
+        assert_eq!(found, None);
+    }
+
+    #[test]
+    fn find_project_root_parent_traversal() {
+        let dir = tempdir().unwrap();
+        let lvl1 = dir.path().join("level1");
+        let lvl2 = lvl1.join("level2");
+        fs::create_dir_all(&lvl2).unwrap();
+        fs::write(lvl1.join("go.mod"), "module x").unwrap();
+        let found = find_project_root(&lvl2);
+        assert_eq!(found, Some(lvl1));
+    }
+
+    #[test]
+    fn parse_netstat_port_ipv4_and_ipv6() {
+        assert_eq!(parse_netstat_port("0.0.0.0:3000"), Some(3000));
+        assert_eq!(parse_netstat_port("127.0.0.1:5173"), Some(5173));
+        assert_eq!(parse_netstat_port("[::]:1420"), Some(1420));
+        assert_eq!(parse_netstat_port("10.0.0.5:49664"), Some(49664));
+        assert_eq!(parse_netstat_port(":::8080"), Some(8080));
+        assert_eq!(parse_netstat_port("invalid"), None);
+        assert_eq!(parse_netstat_port("0.0.0.0:abc"), None);
+    }
+
+    #[test]
+    fn parse_lsof_without_listen_suffix() {
+        let parts: Vec<&str> = "node 1234 user 10u IPv4 0x... 0t0 TCP *:3000".split_whitespace().collect();
+        assert_eq!(parse_lsof_name_parts(&parts), Some(3000));
+    }
+
+    #[test]
+    fn parse_lsof_with_listen_suffix_pr8() {
+        // PR #8: lsof appends "(LISTEN)" as separate token
+        let line = "node 1234 user 10u IPv4 0x... 0t0 TCP *:3000 (LISTEN)";
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        // The ports.len()-1 is "(LISTEN)", must fall back to previous token
+        assert_eq!(parse_lsof_name_parts(&parts), Some(3000));
+        let line2 = "com.apple 5678 user 11u IPv6 0x... 0t0 TCP [::1]:5173 (LISTEN)";
+        let parts2: Vec<&str> = line2.split_whitespace().collect();
+        assert_eq!(parse_lsof_name_parts(&parts2), Some(5173));
+    }
+
+    #[test]
+    fn parse_lsof_too_short() {
+        let parts: Vec<&str> = "a b c".split_whitespace().collect();
+        assert_eq!(parse_lsof_name_parts(&parts), None);
+    }
+
+    #[test]
+    fn dedupe_seen_entries() {
+        let mut seen: HashSet<(u16, u32)> = HashSet::new();
+        assert!(seen.insert((3000, 1234)));
+        assert!(!seen.insert((3000, 1234))); // duplicate
+        assert!(seen.insert((3000, 5678))); // same port, different pid
+        assert!(seen.insert((5173, 1234))); // different port, same pid
+        assert_eq!(seen.len(), 3);
+    }
+}
