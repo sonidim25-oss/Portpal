@@ -81,7 +81,6 @@ src/
       SegmentedControl.tsx
       EmptyState.tsx
       LoadingState.tsx
-      ConfirmDialog.tsx
   features/
     ports/
       PortsPage.tsx
