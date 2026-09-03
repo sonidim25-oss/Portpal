@@ -101,7 +101,7 @@ describe('App integration - invoke + ports', () => {
     const { unmount } = render(<App />);
     await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
 
-    await user.click(screen.getByText('Settings'));
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByText('Text size')).toBeInTheDocument();
     // Standard is the default selection.
     expect(screen.getByRole('button', { name: 'Standard' })).toHaveAttribute('aria-pressed', 'true');
@@ -113,7 +113,7 @@ describe('App integration - invoke + ports', () => {
     // The choice survives a restart.
     unmount();
     render(<App />);
-    await user.click(screen.getByText('Settings'));
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByRole('button', { name: 'Larger' })).toHaveAttribute('aria-pressed', 'true');
   });
 

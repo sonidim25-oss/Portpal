@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 import PortMap from "./PortMap";
+import { AppShell } from "./components/shell/AppShell";
 import type { NavPage, PortEvent, PortFilter, PortInfo, TrafficByPort } from "./app/types";
 import { usePortPalData } from "./app/usePortPalData";
 import { countPortsByCategory, DEV_PORTS, filterPorts, getServiceName, getStatus, timeAgo } from "./utils/helpers";
@@ -21,7 +21,6 @@ function loadFontScale(): number {
   } catch {}
   return 1;
 }
-
 /* ── Sparkline mini-chart ── */
 function Sparkline({ data, color, width = 64, height = 20 }: {
   data: number[]; color: string; width?: number; height?: number;
@@ -73,6 +72,7 @@ export default function App() {
     killing,
     restarting,
     observedAt,
+    lastScanAt,
     loading,
     toast,
     refreshEvents,
@@ -95,34 +95,8 @@ export default function App() {
   }, 0);
 
   return (
-    <div className="app">
-      {/* ── Title bar ── */}
-      <div className="titlebar" data-tauri-drag-region>
-        <div className="titlebar-left">
-          <span className="titlebar-title">PortPal</span>
-        </div>
-        <div className="titlebar-right">
-          <button className="tb-btn" title="Minimize" onClick={() => getCurrentWindow().minimize()}>—</button>
-          <button className="tb-btn" title="Maximize" onClick={() => getCurrentWindow().toggleMaximize()}>□</button>
-          <button className="tb-btn tb-close" title="Close" onClick={() => getCurrentWindow().close()}>✕</button>
-        </div>
-      </div>
-
-      <div className="main-layout">
-        {/* ── Sidebar ── */}
-        <nav className="sidebar">
-          <SidebarBtn icon={<DashboardIcon />} label="Dashboard" active={page === "dashboard"} onClick={() => setPage("dashboard")} />
-          <SidebarBtn icon={<PortsIcon />} label="Ports" sub="(active)" active={page === "ports"} onClick={() => setPage("ports")} />
-          <SidebarBtn icon={<TrafficIcon />} label="Traffic" active={page === "traffic"} onClick={() => setPage("traffic")} />
-          <SidebarBtn icon={<ServicesIcon />} label="Services" active={page === "services"} onClick={() => setPage("services")} />
-          <SidebarBtn icon={<MapIcon />} label="Port Map" active={page === "map"} onClick={() => setPage("map")} />
-          <SidebarBtn icon={<SettingsIcon />} label="Settings" active={page === "settings"} onClick={() => setPage("settings")} />
-          <div className="sidebar-spacer" />
-          <SidebarBtn icon={<LogsIcon />} label="Logs" active={page === "logs"} onClick={() => setPage("logs")} />
-        </nav>
-
-        {/* ── Content ── */}
-        <div className="content">
+    <>
+      <AppShell page={page} onNavigate={setPage} ports={ports} lastScanAt={lastScanAt}>
           {/* ════════ DASHBOARD ════════ */}
           {page === "dashboard" && (
             <DashboardPage
@@ -317,11 +291,10 @@ export default function App() {
           {page === "settings" && (
             <SettingsPage fontScale={fontScale} onFontScale={setFontScale} />
           )}
-        </div>
-      </div>
+      </AppShell>
 
       {toast && <div className="toast">{toast}</div>}
-    </div>
+    </>
   );
 }
 
@@ -609,7 +582,6 @@ function TrafficPage({ ports, traffic }: { ports: PortInfo[]; traffic: TrafficBy
     </div>
   );
 }
-
 /* ══════════════════════════════════════════════
    SERVICES PAGE
    ══════════════════════════════════════════════ */
@@ -712,45 +684,4 @@ function ServicesPage({ ports, traffic }: { ports: PortInfo[]; traffic: TrafficB
       )}
     </div>
   );
-}
-
-/* ── Sidebar Buttons ── */
-function SidebarBtn({ icon, label, sub, active, onClick }: {
-  icon: React.ReactNode; label: string; sub?: string; active: boolean; onClick: () => void;
-}) {
-  return (
-    <button className={`sidebar-btn ${active ? "active" : ""}`} onClick={onClick}>
-      <span className="sb-icon">{icon}</span>
-      <span className="sb-label">{label}</span>
-      {sub && <span className="sb-sub">{sub}</span>}
-    </button>
-  );
-}
-
-/* ── SVG Icons ── */
-function DashboardIcon() {
-  return (<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="1" y="1" width="7" height="7" rx="2" stroke="currentColor" strokeWidth="1.5"/><rect x="10" y="1" width="7" height="7" rx="2" stroke="currentColor" strokeWidth="1.5"/><rect x="1" y="10" width="7" height="7" rx="2" stroke="currentColor" strokeWidth="1.5"/><rect x="10" y="10" width="7" height="7" rx="2" stroke="currentColor" strokeWidth="1.5"/></svg>);
-}
-function PortsIcon() {
-  return (<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="14" height="12" rx="3" stroke="currentColor" strokeWidth="1.5"/><circle cx="6" cy="9" r="1" fill="currentColor"/><circle cx="9" cy="9" r="1" fill="currentColor"/><circle cx="12" cy="9" r="1" fill="currentColor"/></svg>);
-}
-function TrafficIcon() {
-  return (<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M1 14l3-4 3 2 4-7 3 4 3-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M1 16h16" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.4"/></svg>);
-}
-function MapIcon() {
-  return (<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="4" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="14" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.5"/><circle cx="14" cy="14" r="2.5" stroke="currentColor" strokeWidth="1.5"/><line x1="6.2" y1="8" x2="11.8" y2="5" stroke="currentColor" strokeWidth="1.3"/><line x1="6.2" y1="10" x2="11.8" y2="13" stroke="currentColor" strokeWidth="1.3"/></svg>);
-}
-function ServicesIcon() {
-  return (<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="10" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><rect x="2" y="10" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M13 11v5M10.5 13.5h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>);
-}
-function SettingsIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-      <path d="M10 13a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M17.4 12.1a1.3 1.3 0 00.26 1.43l.05.05a1.57 1.57 0 11-2.22 2.22l-.05-.05a1.3 1.3 0 00-1.43-.26 1.3 1.3 0 00-.79 1.19v.14a1.57 1.57 0 11-3.14 0v-.07a1.3 1.3 0 00-.85-1.19 1.3 1.3 0 00-1.43.26l-.05.05a1.57 1.57 0 11-2.22-2.22l.05-.05a1.3 1.3 0 00.26-1.43 1.3 1.3 0 00-1.19-.79h-.14a1.57 1.57 0 110-3.14h.07a1.3 1.3 0 001.19-.85 1.3 1.3 0 00-.26-1.43l-.05-.05A1.57 1.57 0 117.7 3.62l.05.05a1.3 1.3 0 001.43.26h.06a1.3 1.3 0 00.79-1.19v-.14a1.57 1.57 0 113.14 0v.07a1.3 1.3 0 00.79 1.19 1.3 1.3 0 001.43-.26l.05-.05a1.57 1.57 0 112.22 2.22l-.05.05a1.3 1.3 0 00-.26 1.43v.06a1.3 1.3 0 001.19.79h.14a1.57 1.57 0 010 3.14h-.07a1.3 1.3 0 00-1.19.79z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-function LogsIcon() {
-  return (<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="2" width="12" height="14" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M6 6h6M6 9h4M6 12h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>);
 }
