@@ -14,6 +14,8 @@ const mockPorts = [
 describe('App integration - invoke + ports', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
+    document.documentElement.style.removeProperty('--fs-scale');
     vi.mocked(invoke).mockImplementation((cmd: string, _args?: unknown) => {
       if (cmd === 'get_ports') return Promise.resolve(mockPorts);
       if (cmd === 'get_port_events') return Promise.resolve([]);
@@ -90,6 +92,27 @@ describe('App integration - invoke + ports', () => {
     portsUpdatedCb({ payload: newPorts });
 
     await waitFor(() => expect(screen.getByText('8000')).toBeInTheDocument());
+  });
+
+  it('text size setting scales the UI and persists', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<App />);
+    await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
+
+    await user.click(screen.getByText('Settings'));
+    expect(screen.getByText('Text size')).toBeInTheDocument();
+    // Standard is the default selection.
+    expect(screen.getByRole('button', { name: 'Standard' })).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(screen.getByRole('button', { name: 'Larger' }));
+    expect(document.documentElement.style.getPropertyValue('--fs-scale')).toBe('1.3');
+    expect(localStorage.getItem('portpal.fontScale')).toBe('1.3');
+
+    // The choice survives a restart.
+    unmount();
+    render(<App />);
+    await user.click(screen.getByText('Settings'));
+    expect(screen.getByRole('button', { name: 'Larger' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shows empty state when no ports', async () => {

@@ -32,7 +32,7 @@ function nodeColor(n: GraphNode) {
   return (n.framework && FW_COLORS[n.framework]) || (n.is_dev ? "#7c6fff" : "#4a4a6a");
 }
 function nodeR(n: GraphNode) {
-  return n.is_dev ? 26 : 18;
+  return n.is_dev ? 30 : 22;
 }
 
 export default function PortMap({ onClose }: { onClose: () => void }) {
@@ -270,9 +270,9 @@ export default function PortMap({ onClose }: { onClose: () => void }) {
     // Port label
     nodeGs.append("text")
       .attr("text-anchor","middle").attr("dominant-baseline","central")
-      .attr("dy",d=>d.project_name?"-9":"0")
+      .attr("dy",d=>d.project_name?"-10":"0")
       .attr("font-family","JetBrains Mono,monospace")
-      .attr("font-size",d=>d.is_dev?"12":"10")
+      .attr("font-size",d=>d.is_dev?"14":"12")
       .attr("font-weight","700")
       .attr("fill",d=>nodeColor(d))
       .attr("letter-spacing","-.01em")
@@ -281,14 +281,14 @@ export default function PortMap({ onClose }: { onClose: () => void }) {
     // Project name
     nodeGs.filter(d=>!!d.project_name).append("text")
       .attr("text-anchor","middle").attr("dominant-baseline","central")
-      .attr("dy","8").attr("font-family","Geist,sans-serif").attr("font-size","8")
+      .attr("dy","10").attr("font-family","Geist,sans-serif").attr("font-size","10")
       .attr("fill","rgba(255,255,255,0.35)")
       .text(d=>d.project_name!.slice(0,10));
 
     // Framework badge
     nodeGs.filter(d=>!!d.framework).append("text")
       .attr("text-anchor","middle")
-      .attr("font-family","Geist,sans-serif").attr("font-size","7")
+      .attr("font-family","Geist,sans-serif").attr("font-size","9")
       .attr("font-weight","700").attr("letter-spacing",".1em")
       .attr("fill",d=>nodeColor(d)).attr("opacity",.75)
       .attr("dy",d=>d.is_dev?-42:-32)
@@ -297,14 +297,14 @@ export default function PortMap({ onClose }: { onClose: () => void }) {
     // Connection count badge
     nodeGs.filter(d=>d.connection_count>0).append("circle")
       .attr("cx",d=>nodeR(d)-2).attr("cy",d=>-(nodeR(d)-2))
-      .attr("r",7).attr("fill","#080818")
+      .attr("r",8.5).attr("fill","#080818")
       .attr("stroke","rgba(124,111,255,0.45)").attr("stroke-width",1);
 
     nodeGs.filter(d=>d.connection_count>0).append("text")
       .attr("x",d=>nodeR(d)-2).attr("y",d=>-(nodeR(d)-2))
       .attr("text-anchor","middle").attr("dominant-baseline","central")
       .attr("font-family","JetBrains Mono,monospace")
-      .attr("font-size","7").attr("font-weight","700")
+      .attr("font-size","9").attr("font-weight","700")
       .attr("fill","rgba(200,190,255,0.9)")
       .text(d=>String(d.connection_count));
 
