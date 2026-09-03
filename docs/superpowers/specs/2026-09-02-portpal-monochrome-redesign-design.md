@@ -13,6 +13,7 @@ The redesign must remain recognizably PortPal. It improves presentation, informa
 
 The work covers the application shell and all existing navigation destinations:
 
+- Dashboard
 - Ports
 - Traffic
 - Services
@@ -20,9 +21,9 @@ The work covers the application shell and all existing navigation destinations:
 - Logs
 - Settings
 
-Ports is the reference implementation for the visual language. Port Map then reuses the same shell, controls, data presentation, and inspector. Traffic, Services, Logs, and Settings retain their current functionality while adopting the same design system.
+Ports is the reference implementation for the visual language. Port Map then reuses the same shell, controls, data presentation, and inspector. Dashboard, Traffic, Services, Logs, and Settings retain their current functionality while adopting the same design system.
 
-The current Dashboard destination is removed from the visible navigation to match the reference. Its implementation is not deleted as part of the redesign unless a later focused cleanup proves it unreachable and unnecessary.
+Every existing navigation destination, control, action, and backend interaction remains accessible and retains its current behavior. Controls may move or receive new presentation, but the redesign does not remove or redefine them solely to match the references.
 
 ## Design Principles
 
@@ -120,12 +121,13 @@ The app keeps its frameless Tauri window and React window controls. The titlebar
 
 The persistent sidebar contains the PortPal identity followed by:
 
-1. Ports
-2. Traffic
-3. Services
-4. Port Map
-5. Logs
-6. Settings
+1. Dashboard
+2. Ports
+3. Traffic
+4. Services
+5. Port Map
+6. Logs
+7. Settings
 
 The active destination uses `#1D1D1D`, white text and iconography, and subtle border contrast. It never uses a colored accent.
 
@@ -178,7 +180,7 @@ Classification is implemented as a deterministic pure selector:
 
 The Filter action exposes only filters backed by current fields, such as protocol, project presence, restartability, and active connection count. It does not expose user, address, or endpoint filters until the backend supplies them.
 
-Kill All applies to the current filtered result, deduplicates PIDs, displays the exact process count in a confirmation dialog, and runs only after confirmation. Individual kill and restart operations preserve the existing command behavior and pending-state protections.
+Kill All preserves its current behavior by dispatching the existing kill action for the current filtered result immediately. Individual kill and restart operations preserve the existing command behavior and pending-state protections.
 
 The table uses these columns when space permits:
 
@@ -232,6 +234,7 @@ The header contains:
 - Show external option
 - Group by project option
 - Zoom out, zoom percentage, zoom in, and fit/fullscreen controls
+- Existing refresh and close controls
 
 The map canvas is black and open. Nodes are rectangular dark surfaces with thin gray borders. Their labels prioritize project/service name, port, and process/framework. Different node categories use iconography, text, and border treatment rather than framework color.
 
@@ -243,11 +246,13 @@ Group by project is enabled only when useful grouping can be derived from curren
 
 Search and filters dim or hide nodes consistently and preserve comprehensible edges. Selecting a node opens the shared inspector using its matching `PortInfo` where available.
 
-The topology retains functional D3 dragging and zooming. It removes the particle canvas, neon glows, pulsing nodes, decorative rings, animated flow strokes, and continuous decorative movement. The simulation settles and remains stable until data or user interaction changes it.
+The topology retains functional D3 dragging, zooming, refresh, close, node selection, and node-level kill behavior. It removes the particle canvas, neon glows, pulsing nodes, decorative rings, animated flow strokes, and continuous decorative movement. The simulation settles and remains stable until data or user interaction changes it.
 
 A compact legend explains service nodes and connection lines. A lightweight minimap mirrors real node positions in the lower-right corner and indicates the viewport. Fit-to-view is the reference's fullscreen-style control; actual application fullscreen is not required.
 
 ## Remaining Screens
+
+Dashboard retains its current summaries, navigation links, service overview, traffic information, and recent events while adopting the monochrome tokens and restrained surfaces.
 
 Traffic retains real connection samples and sparklines but renders them with neutral strokes and surfaces. Its summary and rows use the shared page header and separators instead of colorful statistic cards.
 
@@ -271,7 +276,7 @@ Kill and restart failures display restrained toast feedback. Buttons are disable
 - Table rows and map nodes are keyboard selectable.
 - Focus indicators use neutral border contrast.
 - The active navigation item uses `aria-current="page"`.
-- Dialog confirmation traps focus and returns focus to its trigger.
+- Popovers and inspector dismissal return focus predictably to their trigger or selected item.
 - Inspector sections use semantic headings and definition lists.
 - Status is never communicated by color alone.
 - Controls retain readable contrast in all states.
@@ -323,7 +328,7 @@ Focused tests cover:
 - Dev/System/Other classification and filter counts
 - Search across every supported real field
 - Filter composition
-- PID deduplication and confirmation for Kill All
+- Kill All dispatch across the current filtered result without introducing a confirmation step
 - Individual kill and restart pending/error behavior
 - Shared inspector selection, dismissal, and omission of unavailable fields
 - Navigation state and monitoring summary
@@ -344,7 +349,7 @@ Verification consists of focused tests during each red-green cycle, the complete
 4. Rebuild Ports and its filtering/actions.
 5. Build the shared inspector and integrate it with Ports.
 6. Rebuild Port Map and integrate the shared inspector.
-7. Restyle Traffic, Services, Logs, and Settings.
+7. Restyle Dashboard, Traffic, Services, Logs, and Settings.
 8. Verify behavior, accessibility, responsive layouts, and build output.
 
 Each stage leaves the application usable and preserves current backend contracts.
