@@ -3,34 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 import PortMap from "./PortMap";
-
-interface PortInfo {
-  port: number;
-  pid: number;
-  process_name: string;
-  project_name: string | null;
-  project_path: string | null;
-  protocol: string;
-  start_cmd: string | null;
-}
-
-interface PortEvent {
-  port: number;
-  pid: number;
-  process_name: string;
-  framework: string | null;
-  event_type: string;
-  timestamp: number;
-}
-
-interface TrafficSample {
-  connections: number;
-  timestamp: number;
-}
-
-import { DEV_PORTS, getServiceName, getStatus, timeAgo } from "./utils/helpers";
-
-type NavPage = "dashboard" | "ports" | "traffic" | "map" | "services" | "logs" | "settings";
+import type { NavPage, PortEvent, PortFilter, PortInfo, TrafficByPort } from "./app/types";
+import { countPortsByCategory, DEV_PORTS, filterPorts, getServiceName, getStatus, timeAgo } from "./utils/helpers";
 
 /* Multipliers for --fs-scale, the root of the type scale in App.css. */
 const TEXT_SIZES = [
@@ -95,9 +69,9 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [page, setPage] = useState<NavPage>("ports");
-  const [portFilter, setPortFilter] = useState<"all" | "dev" | "other">("all");
+  const [portFilter, setPortFilter] = useState<PortFilter>("all");
   const [events, setEvents] = useState<PortEvent[]>([]);
-  const [traffic, setTraffic] = useState<Record<number, TrafficSample[]>>({});
+  const [traffic, setTraffic] = useState<TrafficByPort>({});
   const [firstSeen, setFirstSeen] = useState<Record<number, number>>({});
   const [fontScale, setFontScale] = useState<number>(loadFontScale);
 
@@ -126,7 +100,7 @@ export default function App() {
 
   const fetchTraffic = useCallback(async () => {
     try {
-      const t = await invoke<Record<number, TrafficSample[]>>("get_port_traffic");
+      const t = await invoke<TrafficByPort>("get_port_traffic");
       setTraffic(t);
     } catch {}
   }, []);
@@ -215,22 +189,8 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const filteredPorts = useMemo(() => {
-    let list = ports;
-    if (portFilter === "dev") list = list.filter((p) => DEV_PORTS[p.port]);
-    else if (portFilter === "other") list = list.filter((p) => !DEV_PORTS[p.port]);
-    const q = search.toLowerCase().trim();
-    if (!q) return list;
-    return list.filter((p) => {
-      const dev = DEV_PORTS[p.port];
-      return (
-        String(p.port).includes(q) ||
-        p.process_name.toLowerCase().includes(q) ||
-        (p.project_name && p.project_name.toLowerCase().includes(q)) ||
-        (dev && dev.label.toLowerCase().includes(q))
-      );
-    });
-  }, [ports, search, portFilter]);
+  const filteredPorts = filterPorts(ports, search, portFilter);
+  const portCounts = countPortsByCategory(ports);
 
   const fwSet = new Set(ports.map((p) => DEV_PORTS[p.port]?.label).filter(Boolean));
   const activeConns = Object.values(traffic).reduce((sum, samples) => {
@@ -309,13 +269,16 @@ export default function App() {
               <div className="port-tabs">
                 <div className="tab-group">
                   <button className={`tab-btn ${portFilter === "all" ? "active" : ""}`} onClick={() => setPortFilter("all")}>
-                    All <span className="tab-count">{ports.length}</span>
+                    All <span className="tab-count">{portCounts.all}</span>
                   </button>
                   <button className={`tab-btn ${portFilter === "dev" ? "active" : ""}`} onClick={() => setPortFilter("dev")}>
-                    Dev <span className="tab-count">{ports.filter(p => DEV_PORTS[p.port]).length}</span>
+                    Dev <span className="tab-count">{portCounts.dev}</span>
+                  </button>
+                  <button className={`tab-btn ${portFilter === "system" ? "active" : ""}`} onClick={() => setPortFilter("system")}>
+                    System <span className="tab-count">{portCounts.system}</span>
                   </button>
                   <button className={`tab-btn ${portFilter === "other" ? "active" : ""}`} onClick={() => setPortFilter("other")}>
-                    Other <span className="tab-count">{ports.filter(p => !DEV_PORTS[p.port]).length}</span>
+                    Other <span className="tab-count">{portCounts.other}</span>
                   </button>
                 </div>
                 <button
@@ -515,7 +478,7 @@ function SettingsPage({ fontScale, onFontScale }: {
 function DashboardPage({ ports, events, traffic, fwSet, activeConns, onNavigate }: {
   ports: PortInfo[];
   events: PortEvent[];
-  traffic: Record<number, TrafficSample[]>;
+  traffic: TrafficByPort;
   fwSet: Set<string>;
   activeConns: number;
   onNavigate: (page: NavPage) => void;
@@ -656,7 +619,7 @@ function LogsPage({ events, onRefresh }: { events: PortEvent[]; onRefresh: () =>
 /* ══════════════════════════════════════════════
    TRAFFIC PAGE
    ══════════════════════════════════════════════ */
-function TrafficPage({ ports, traffic }: { ports: PortInfo[]; traffic: Record<number, TrafficSample[]> }) {
+function TrafficPage({ ports, traffic }: { ports: PortInfo[]; traffic: TrafficByPort }) {
   const totalConns = Object.values(traffic).reduce((sum, samples) => {
     const last = samples[samples.length - 1];
     return sum + (last?.connections ?? 0);
@@ -761,7 +724,7 @@ interface ServiceGroup {
   ports: PortInfo[];
 }
 
-function ServicesPage({ ports, traffic }: { ports: PortInfo[]; traffic: Record<number, TrafficSample[]> }) {
+function ServicesPage({ ports, traffic }: { ports: PortInfo[]; traffic: TrafficByPort }) {
   // Group ports by project_name or framework
   const groups = useMemo(() => {
     const map = new Map<string, ServiceGroup>();

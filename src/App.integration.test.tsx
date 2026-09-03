@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { invoke } from '@tauri-apps/api/core';
@@ -38,7 +38,7 @@ describe('App integration - invoke + ports', () => {
     expect(screen.getByText('5173')).toBeInTheDocument();
   });
 
-  it('filters by search and Dev/Other tabs', async () => {
+  it('filters by search and Dev/System tabs', async () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
@@ -57,9 +57,9 @@ describe('App integration - invoke + ports', () => {
     await waitFor(() => expect(screen.queryByText('49664')).not.toBeInTheDocument());
     expect(screen.getByText('3000')).toBeInTheDocument();
 
-    // Other tab should show only non-dev
-    const otherBtn = screen.getByText('Other');
-    await user.click(otherBtn);
+    // System tab should show only infrastructure ports.
+    const systemBtn = screen.getByText('System');
+    await user.click(systemBtn);
     expect(screen.getByText('49664')).toBeInTheDocument();
     expect(screen.queryByText('3000')).not.toBeInTheDocument();
   });
@@ -89,7 +89,9 @@ describe('App integration - invoke + ports', () => {
 
     // Simulate new port arriving via tray emit
     const newPorts = [...mockPorts, { port: 8000, pid: 4444, process_name: 'python', project_name: null, project_path: null, protocol: 'TCP', start_cmd: null }];
-    portsUpdatedCb({ payload: newPorts });
+    await act(async () => {
+      portsUpdatedCb({ payload: newPorts });
+    });
 
     await waitFor(() => expect(screen.getByText('8000')).toBeInTheDocument());
   });
