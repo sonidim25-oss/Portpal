@@ -202,3 +202,56 @@ fn show_window(app: &AppHandle) {
         let _ = window.unminimize();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scanner::PortInfo;
+
+    fn p(port: u16) -> PortInfo {
+        PortInfo { port, pid: 1, process_name: "test".into(), project_path: None, project_name: None, protocol: "TCP".into(), start_cmd: None }
+    }
+
+    #[test]
+    fn clear_when_no_ports() {
+        assert_eq!(compute_state(&[]), TrafficState::Clear);
+    }
+
+    #[test]
+    fn clear_when_only_system_ports() {
+        let ports = vec![p(49664), p(49665), p(135)];
+        assert_eq!(compute_state(&ports), TrafficState::Clear);
+    }
+
+    #[test]
+    fn active_when_dev_port_present() {
+        assert_eq!(compute_state(&[p(3000)]), TrafficState::Active);
+        assert_eq!(compute_state(&[p(5173)]), TrafficState::Active);
+        assert_eq!(compute_state(&[p(1420)]), TrafficState::Active);
+        assert_eq!(compute_state(&[p(49664), p(3000)]), TrafficState::Active);
+    }
+
+    #[test]
+    fn conflict_when_duplicate_port() {
+        let ports = vec![p(3000), p(3000)];
+        assert_eq!(compute_state(&ports), TrafficState::Conflict);
+        // Conflict takes precedence over Active
+        let ports2 = vec![p(3000), p(5173), p(3000)];
+        assert_eq!(compute_state(&ports2), TrafficState::Conflict);
+    }
+
+    #[test]
+    fn tooltip_messages() {
+        assert_eq!(get_tooltip(&TrafficState::Clear, 0), "PortPal — All clear");
+        assert_eq!(get_tooltip(&TrafficState::Active, 1), "PortPal — 1 dev port active");
+        assert_eq!(get_tooltip(&TrafficState::Active, 3), "PortPal — 3 dev ports active");
+        assert_eq!(get_tooltip(&TrafficState::Conflict, 0), "PortPal — ⚠ Port conflict detected!");
+    }
+
+    #[test]
+    fn debounce_state_initial() {
+        let db = DebounceState::new();
+        assert_eq!(db.current, TrafficState::Clear);
+        assert_eq!(db.pending, TrafficState::Clear);
+    }
+}

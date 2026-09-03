@@ -19,14 +19,32 @@
   --accent:    #7c6fff;
   --mono:      'JetBrains Mono', monospace;
   --sans:      'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
-  --sidebar-w: 80px;
+  --sidebar-w: 88px;
+
+  /* Type scale. Every font-size in the app comes from these tokens -- bump
+     --fs-scale to enlarge the whole UI at once. Comments show the pre-scale
+     value each token replaced. */
+  --fs-scale:  1;
+  --fs-3xs:  calc(10px * var(--fs-scale));  /* was  8px */
+  --fs-2xs:  calc(11px * var(--fs-scale));  /* was  9px */
+  --fs-xs:   calc(12px * var(--fs-scale));  /* was 10px */
+  --fs-sm:   calc(13px * var(--fs-scale));  /* was 11px */
+  --fs-md:   calc(14px * var(--fs-scale));  /* was 12px */
+  --fs-base: calc(15px * var(--fs-scale));  /* was 13px */
+  --fs-lg:   calc(17px * var(--fs-scale));  /* was 14px */
+  --fs-xl:   calc(19px * var(--fs-scale));  /* was 16px */
+  --fs-2xl:  calc(21px * var(--fs-scale));  /* was 18px */
+  --fs-3xl:  calc(23px * var(--fs-scale));  /* was 20px */
+  --fs-4xl:  calc(25px * var(--fs-scale));  /* was 22px */
+  --fs-5xl:  calc(28px * var(--fs-scale));  /* was 24px */
 }
 
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-base);
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   user-select: none;
@@ -45,7 +63,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 36px;
+  height: 40px;
   padding: 0 12px;
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
@@ -55,16 +73,16 @@ body {
 .titlebar-left { display: flex; align-items: center; gap: 8px; }
 .titlebar-title {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 600;
   color: var(--text2);
   letter-spacing: 0.02em;
 }
 .titlebar-right { display: flex; gap: 2px; -webkit-app-region: no-drag; }
 .tb-btn {
-  width: 28px; height: 28px;
+  width: 30px; height: 30px;
   border: none; background: transparent;
-  color: var(--text3); font-size: 11px;
+  color: var(--text3); font-size: var(--fs-sm);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; border-radius: 4px;
   transition: all 0.12s;
@@ -94,12 +112,12 @@ body {
 .sidebar-spacer { flex: 1; }
 
 .sidebar-btn {
-  width: 64px;
+  width: 78px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  padding: 8px 4px 6px;
+  padding: 8px 2px 6px;
   border: none;
   background: transparent;
   color: var(--text3);
@@ -128,8 +146,8 @@ body {
   background: var(--accent);
 }
 .sb-icon { display: flex; align-items: center; justify-content: center; }
-.sb-label { font-size: 9px; font-weight: 500; letter-spacing: 0.02em; }
-.sb-sub { font-size: 8px; opacity: 0.6; margin-top: -2px; }
+.sb-label { font-size: var(--fs-2xs); font-weight: 500; letter-spacing: 0.02em; line-height: 1.2; }
+.sb-sub { font-size: var(--fs-3xs); opacity: 0.6; margin-top: 0; line-height: 1.2; }
 
 /* ── Content ── */
 .content {
@@ -157,7 +175,7 @@ body {
   padding: 8px 12px 8px 8px;
   color: var(--text);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-base);
   outline: none;
   transition: border-color 0.15s;
 }
@@ -165,7 +183,7 @@ body {
 .search-input:focus { border-color: rgba(124,111,255,0.4); }
 
 .map-toggle-btn {
-  width: 34px; height: 34px;
+  width: 38px; height: 38px;
   border-radius: 8px;
   border: 1px solid var(--border2);
   background: var(--bg3);
@@ -202,7 +220,7 @@ body {
   border: none;
   border-radius: 5px;
   padding: 5px 12px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text3);
   cursor: pointer;
@@ -221,7 +239,7 @@ body {
   background: rgba(255,255,255,0.1);
   padding: 1px 5px;
   border-radius: 10px;
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   font-family: var(--mono);
 }
 
@@ -231,7 +249,7 @@ body {
   border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: 6px;
   padding: 5px 12px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
@@ -248,7 +266,7 @@ body {
 /* ── Summary ── */
 .summary-line {
   padding: 0 20px 10px;
-  font-size: 12px;
+  font-size: var(--fs-md);
   color: var(--text3);
 }
 
@@ -269,12 +287,12 @@ body {
 }
 .port-table thead th {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text3);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 8px 12px;
+  padding: 8px 10px;
   text-align: left;
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -296,10 +314,10 @@ body {
   background: var(--bg3);
 }
 .port-table tbody td {
-  padding: 12px;
+  padding: 12px 10px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 /* Port column */
@@ -307,7 +325,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 80px;
+  min-width: 92px;
 }
 .port-dot {
   width: 8px;
@@ -318,7 +336,7 @@ body {
 }
 .port-num {
   font-family: var(--mono);
-  font-size: 16px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.02em;
@@ -328,7 +346,7 @@ body {
 .td-service {
   font-weight: 600;
   color: var(--text);
-  max-width: 160px;
+  max-width: 184px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -337,7 +355,7 @@ body {
 /* Process column */
 .td-process code {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--text2);
   background: transparent;
   white-space: nowrap;
@@ -346,7 +364,7 @@ body {
 /* Status badges */
 .status-badge {
   display: inline-block;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -380,7 +398,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   padding: 3px 10px;
   border-radius: 6px;
@@ -389,7 +407,7 @@ body {
   color: var(--fw-color, var(--text3));
   border: 1px solid color-mix(in srgb, var(--fw-color, #6e7681) 25%, transparent);
 }
-.fw-icon { font-size: 12px; }
+.fw-icon { font-size: var(--fs-md); }
 .fw-generic {
   --fw-color: #6e7681;
 }
@@ -400,13 +418,13 @@ body {
   white-space: nowrap;
 }
 .action-btn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text3);
-  font-size: 13px;
+  font-size: var(--fs-base);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -461,7 +479,7 @@ body {
   justify-content: center;
   gap: 12px;
   color: var(--text3);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .loader {
   width: 28px; height: 28px;
@@ -480,7 +498,7 @@ body {
   0%,100% { transform: scale(0.9); opacity: 0.3; }
   50%     { transform: scale(1.1); opacity: 0.7; }
 }
-.empty-sub { font-size: 11px; color: var(--text3); opacity: 0.5; }
+.empty-sub { font-size: var(--fs-sm); color: var(--text3); opacity: 0.5; }
 
 /* ── Toast ── */
 .toast {
@@ -491,7 +509,7 @@ body {
   background: var(--bg4);
   border: 1px solid var(--border2);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-md);
   padding: 8px 16px;
   border-radius: 8px;
   white-space: nowrap;
@@ -508,18 +526,81 @@ body {
   to { opacity: 0; transform: translateX(-50%) translateY(8px); }
 }
 
-/* ── Settings placeholder ── */
+/* ══════════════════════════════════════
+   SETTINGS PAGE
+   ══════════════════════════════════════ */
 .settings-page {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: var(--text3);
+  overflow-y: auto;
+  animation: fadeUp 0.25s ease;
 }
-.settings-page h2 { font-size: 18px; font-weight: 600; color: var(--text2); }
-.settings-sub { font-size: 12px; }
+.settings-header { padding: 16px 20px 12px; flex-shrink: 0; }
+.settings-page h2 { font-size: var(--fs-2xl); font-weight: 700; color: var(--text); }
+.settings-sub { font-size: var(--fs-sm); color: var(--text3); margin-top: 2px; }
+
+.settings-card {
+  margin: 0 20px 16px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.settings-row-text { min-width: 0; }
+.settings-label { font-size: var(--fs-base); font-weight: 600; color: var(--text); }
+.settings-hint { font-size: var(--fs-sm); color: var(--text3); margin-top: 2px; }
+
+.size-group {
+  display: flex;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.size-btn {
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-family: var(--sans);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text3);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.size-btn:hover { color: var(--text2); background: rgba(255,255,255,0.05); }
+.size-btn.active {
+  background: var(--bg4);
+  color: var(--text);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+.settings-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.settings-preview-port {
+  font-family: var(--mono);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--accent);
+}
+.settings-preview-name { font-size: var(--fs-base); color: var(--text2); }
 
 /* ══════════════════════════════════════
    SERVICES PAGE
@@ -535,8 +616,8 @@ body {
   padding: 16px 20px 12px;
   flex-shrink: 0;
 }
-.services-header h2 { font-size: 18px; font-weight: 700; color: var(--text); }
-.services-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.services-header h2 { font-size: var(--fs-2xl); font-weight: 700; color: var(--text); }
+.services-sub { font-size: var(--fs-sm); color: var(--text3); margin-top: 2px; }
 
 .services-grid {
   flex: 1;
@@ -570,14 +651,14 @@ body {
   border-radius: 8px;
   background: color-mix(in srgb, var(--svc-color, var(--accent)) 12%, transparent);
   display: flex; align-items: center; justify-content: center;
-  font-size: 18px; flex-shrink: 0;
+  font-size: var(--fs-2xl); flex-shrink: 0;
 }
 .svc-card-info { flex: 1; min-width: 0; }
 .svc-card-name {
-  font-size: 14px; font-weight: 600; color: var(--text);
+  font-size: var(--fs-lg); font-weight: 600; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.svc-card-meta { font-size: 10px; color: var(--text3); margin-top: 1px; }
+.svc-card-meta { font-size: var(--fs-xs); color: var(--text3); margin-top: 1px; }
 
 .svc-sparkline-wrap {
   margin-bottom: 10px;
@@ -589,12 +670,12 @@ body {
 .svc-ports-list { display: flex; flex-direction: column; gap: 4px; }
 .svc-port-item {
   display: flex; align-items: center; gap: 8px;
-  font-size: 11px; padding: 3px 0;
+  font-size: var(--fs-sm); padding: 3px 0;
 }
 .svc-port-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-.svc-port-num { font-family: var(--mono); font-weight: 600; color: var(--text); min-width: 42px; }
+.svc-port-num { font-family: var(--mono); font-weight: 600; color: var(--text); min-width: 50px; }
 .svc-port-process { color: var(--text2); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.svc-port-pid { font-family: var(--mono); font-size: 10px; color: var(--text3); }
+.svc-port-pid { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text3); }
 
 /* ── PortMap full page ── */
 /* ══════════════════════════════════════
@@ -611,8 +692,8 @@ body {
   padding: 16px 20px 8px;
   flex-shrink: 0;
 }
-.traffic-header h2 { font-size: 18px; font-weight: 700; color: var(--text); }
-.traffic-page-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.traffic-header h2 { font-size: var(--fs-2xl); font-weight: 700; color: var(--text); }
+.traffic-page-sub { font-size: var(--fs-sm); color: var(--text3); margin-top: 2px; }
 
 .traffic-stats {
   display: flex;
@@ -630,13 +711,13 @@ body {
 }
 .traf-stat-value {
   font-family: var(--mono);
-  font-size: 24px;
+  font-size: var(--fs-5xl);
   font-weight: 700;
   color: var(--text);
   line-height: 1;
 }
 .traf-stat-label {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--text3);
   margin-top: 4px;
   text-transform: uppercase;
@@ -680,11 +761,11 @@ body {
 .traf-port-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .traf-port-num {
   font-family: var(--mono);
-  font-size: 16px;
+  font-size: var(--fs-xl);
   font-weight: 700;
 }
 .traf-svc-name {
-  font-size: 12px;
+  font-size: var(--fs-md);
   color: var(--text2);
   white-space: nowrap;
   overflow: hidden;
@@ -692,9 +773,9 @@ body {
 }
 .traf-card-stats { display: flex; align-items: center; gap: 6px; }
 .traf-metric { display: flex; align-items: baseline; gap: 3px; }
-.traf-metric-val { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--text); }
-.traf-metric-label { font-size: 9px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; }
-.traf-metric-sep { color: var(--text3); font-size: 10px; }
+.traf-metric-val { font-family: var(--mono); font-size: var(--fs-lg); font-weight: 600; color: var(--text); }
+.traf-metric-label { font-size: var(--fs-2xs); color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; }
+.traf-metric-sep { color: var(--text3); font-size: var(--fs-xs); }
 .traf-card-chart { flex-shrink: 0; margin-left: 16px; }
 
 /* ── PortMap full page ── */
@@ -715,7 +796,7 @@ body {
 /* ══════════════════════════════════════
    TRAFFIC & SPARKLINE
    ══════════════════════════════════════ */
-.td-traffic { min-width: 100px; }
+.td-traffic { min-width: 112px; }
 .traffic-cell {
   display: flex;
   flex-direction: column;
@@ -723,7 +804,7 @@ body {
 }
 .traffic-rate {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--text2);
 }
 .sparkline { display: block; }
@@ -733,7 +814,7 @@ body {
 }
 .td-time {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--text3);
   white-space: nowrap;
 }
@@ -752,13 +833,13 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 .dash-title {
-  font-size: 20px;
+  font-size: var(--fs-3xl);
   font-weight: 700;
   color: var(--text);
   margin-bottom: 2px;
 }
 .dash-sub {
-  font-size: 12px;
+  font-size: var(--fs-md);
   color: var(--text3);
   margin-bottom: 20px;
 }
@@ -792,19 +873,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: var(--fs-2xl);
   flex-shrink: 0;
 }
 .stat-info { display: flex; flex-direction: column; }
 .stat-value {
   font-family: var(--mono);
-  font-size: 22px;
+  font-size: var(--fs-4xl);
   font-weight: 700;
   color: var(--text);
   line-height: 1;
 }
 .stat-label {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--text3);
   margin-top: 2px;
 }
@@ -818,7 +899,7 @@ body {
   margin-bottom: 12px;
 }
 .dash-section-header h3 {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--text2);
 }
@@ -826,13 +907,13 @@ body {
   background: none;
   border: none;
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   font-weight: 500;
 }
 .dash-link:hover { text-decoration: underline; }
 .dash-empty {
-  font-size: 12px;
+  font-size: var(--fs-md);
   color: var(--text3);
   padding: 12px 0;
 }
@@ -862,11 +943,11 @@ body {
 }
 .dash-svc-port {
   font-family: var(--mono);
-  font-size: 16px;
+  font-size: var(--fs-xl);
   font-weight: 700;
 }
 .dash-svc-name {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--text3);
   margin-bottom: 8px;
   white-space: nowrap;
@@ -882,17 +963,17 @@ body {
   gap: 10px;
   padding: 6px 8px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--fs-md);
   transition: background 0.1s;
 }
 .dash-event-row:hover { background: var(--bg3); }
 .ev-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .ev-green { background: var(--green); box-shadow: 0 0 4px var(--green); }
 .ev-red { background: var(--red); box-shadow: 0 0 4px var(--red); }
-.ev-port { font-family: var(--mono); font-weight: 600; color: var(--text); min-width: 44px; }
+.ev-port { font-family: var(--mono); font-weight: 600; color: var(--text); min-width: 52px; }
 .ev-name { color: var(--text2); flex: 1; }
 .ev-type {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -901,7 +982,7 @@ body {
 }
 .ev-type.started { background: rgba(34,197,94,0.12); color: var(--green); }
 .ev-type.stopped { background: rgba(239,68,68,0.12); color: var(--red); }
-.ev-time { font-family: var(--mono); font-size: 10px; color: var(--text3); min-width: 52px; text-align: right; }
+.ev-time { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text3); min-width: 64px; text-align: right; }
 
 /* ══════════════════════════════════════
    LOGS PAGE
@@ -920,13 +1001,13 @@ body {
   padding: 16px 20px 8px;
   flex-shrink: 0;
 }
-.logs-header h2 { font-size: 18px; font-weight: 700; color: var(--text); }
-.logs-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.logs-header h2 { font-size: var(--fs-2xl); font-weight: 700; color: var(--text); }
+.logs-sub { font-size: var(--fs-sm); color: var(--text3); margin-top: 2px; }
 .logs-refresh {
   background: var(--bg3);
   border: 1px solid var(--border2);
   color: var(--text2);
-  font-size: 12px;
+  font-size: var(--fs-md);
   padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
@@ -962,29 +1043,29 @@ body {
 .log-main { display: flex; align-items: center; gap: 8px; }
 .log-port {
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 700;
   color: var(--text);
 }
 .log-process {
-  font-size: 12px;
+  font-size: var(--fs-md);
   color: var(--text2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .log-fw {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 600;
 }
 .log-detail {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--text3);
   margin-top: 2px;
 }
 .log-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .log-type-badge {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1003,8 +1084,8 @@ body {
 }
 .log-time {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--text3);
-  min-width: 70px;
+  min-width: 82px;
   text-align: right;
 }

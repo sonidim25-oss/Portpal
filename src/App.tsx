@@ -28,52 +28,24 @@ interface TrafficSample {
   timestamp: number;
 }
 
-const DEV_PORTS: Record<number, { label: string; color: string; icon: string }> = {
-  3000: { label: "React", color: "#61dafb", icon: "⚛" },
-  3001: { label: "React", color: "#61dafb", icon: "⚛" },
-  4000: { label: "Node", color: "#68a063", icon: "⬢" },
-  4200: { label: "Angular", color: "#dd0031", icon: "△" },
-  5173: { label: "Vite", color: "#646cff", icon: "⚡" },
-  5174: { label: "Vite", color: "#646cff", icon: "⚡" },
-  8000: { label: "Django", color: "#2bbc8a", icon: "🐍" },
-  8080: { label: "HTTP", color: "#f0a500", icon: "🌐" },
-  8888: { label: "Jupyter", color: "#f37626", icon: "📓" },
-  5432: { label: "Postgres", color: "#336791", icon: "🐘" },
-  3306: { label: "MySQL", color: "#4479a1", icon: "🐬" },
-  6379: { label: "Redis", color: "#dc382d", icon: "◆" },
-  27017: { label: "Mongo", color: "#4db33d", icon: "🍃" },
-  9000: { label: "PHP", color: "#8892bf", icon: "🐘" },
-  1420: { label: "Tauri", color: "#ffc131", icon: "🦀" },
-  22:   { label: "SSH", color: "#6e7681", icon: "🔒" },
-  443:  { label: "HTTPS", color: "#22c55e", icon: "🔐" },
-  80:   { label: "HTTP", color: "#f0a500", icon: "🌐" },
-};
+import { DEV_PORTS, getServiceName, getStatus, timeAgo } from "./utils/helpers";
 
 type NavPage = "dashboard" | "ports" | "traffic" | "map" | "services" | "logs" | "settings";
 
-function getServiceName(port: PortInfo): string {
-  const dev = DEV_PORTS[port.port];
-  if (port.project_name) return port.project_name;
-  if (dev) return `${dev.label} Server`;
-  return port.process_name;
-}
+/* Multipliers for --fs-scale, the root of the type scale in App.css. */
+const TEXT_SIZES = [
+  { label: "Standard", value: 1 },
+  { label: "Large", value: 1.15 },
+  { label: "Larger", value: 1.3 },
+];
+const FONT_SCALE_KEY = "portpal.fontScale";
 
-function getStatus(port: PortInfo): { label: string; cls: string } {
-  const dev = DEV_PORTS[port.port];
-  if (dev && [5432, 3306, 6379, 27017].includes(port.port)) {
-    return { label: "ACTIVE", cls: "status-active" };
-  }
-  if (dev) return { label: "ACTIVE", cls: "status-active" };
-  return { label: "LISTENING", cls: "status-listening" };
-}
-
-function timeAgo(ts: number): string {
-  const diff = Math.floor((Date.now() - ts) / 1000);
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+function loadFontScale(): number {
+  try {
+    const saved = Number(localStorage.getItem(FONT_SCALE_KEY));
+    if (TEXT_SIZES.some((s) => s.value === saved)) return saved;
+  } catch {}
+  return 1;
 }
 
 /* ── Sparkline mini-chart ── */
@@ -127,6 +99,12 @@ export default function App() {
   const [events, setEvents] = useState<PortEvent[]>([]);
   const [traffic, setTraffic] = useState<Record<number, TrafficSample[]>>({});
   const [firstSeen, setFirstSeen] = useState<Record<number, number>>({});
+  const [fontScale, setFontScale] = useState<number>(loadFontScale);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--fs-scale", String(fontScale));
+    try { localStorage.setItem(FONT_SCALE_KEY, String(fontScale)); } catch {}
+  }, [fontScale]);
 
   const fetchPorts = useCallback(async () => {
     try {
@@ -239,10 +217,8 @@ export default function App() {
 
   const filteredPorts = useMemo(() => {
     let list = ports;
-    // Filter by tab
     if (portFilter === "dev") list = list.filter((p) => DEV_PORTS[p.port]);
     else if (portFilter === "other") list = list.filter((p) => !DEV_PORTS[p.port]);
-    // Then by search
     const q = search.toLowerCase().trim();
     if (!q) return list;
     return list.filter((p) => {
@@ -480,15 +456,55 @@ export default function App() {
 
           {/* ════════ SETTINGS ════════ */}
           {page === "settings" && (
-            <div className="settings-page">
-              <h2>Settings</h2>
-              <p className="settings-sub">Coming in v0.2</p>
-            </div>
+            <SettingsPage fontScale={fontScale} onFontScale={setFontScale} />
           )}
         </div>
       </div>
 
       {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════
+   SETTINGS PAGE
+   ══════════════════════════════════════════════ */
+function SettingsPage({ fontScale, onFontScale }: {
+  fontScale: number; onFontScale: (v: number) => void;
+}) {
+  return (
+    <div className="settings-page">
+      <div className="settings-header">
+        <h2>Settings</h2>
+        <p className="settings-sub">Appearance &amp; accessibility</p>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <div className="settings-label">Text size</div>
+            <div className="settings-hint">Scales every label, table and badge in PortPal.</div>
+          </div>
+          <div className="size-group" role="group" aria-label="Text size">
+            {TEXT_SIZES.map((size) => (
+              <button
+                key={size.label}
+                className={`size-btn${fontScale === size.value ? " active" : ""}`}
+                aria-pressed={fontScale === size.value}
+                onClick={() => onFontScale(size.value)}
+              >
+                {size.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="settings-preview">
+          <span className="settings-preview-port">:3000</span>
+          <span className="settings-preview-name">vite — my-app</span>
+          <span className="status-badge status-active">ACTIVE</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -534,7 +550,7 @@ function DashboardPage({ ports, events, traffic, fwSet, activeConns, onNavigate 
               <div key={p.port} className="dash-svc-card">
                 <div className="dash-svc-top">
                   <span className="dash-svc-port" style={{ color: dev?.color ?? "#7c6fff" }}>:{p.port}</span>
-                  <span className="status-badge status-active" style={{ fontSize: 8, padding: "2px 5px" }}>ACTIVE</span>
+                  <span className="status-badge status-active" style={{ fontSize: "var(--fs-3xs)", padding: "2px 5px" }}>ACTIVE</span>
                 </div>
                 <div className="dash-svc-name">{getServiceName(p)}</div>
                 <Sparkline data={sparkData} color={dev?.color ?? "#7c6fff"} width={100} height={24} />
@@ -700,7 +716,7 @@ function TrafficPage({ ports, traffic }: { ports: PortInfo[]; traffic: Record<nu
                     <span className="traf-port-num" style={{ color }}>:{p.port}</span>
                     <span className="traf-svc-name">{getServiceName(p)}</span>
                     {dev && (
-                      <span className="fw-badge" style={{ "--fw-color": dev.color, fontSize: 9, padding: "2px 6px" } as React.CSSProperties}>
+                      <span className="fw-badge" style={{ "--fw-color": dev.color, fontSize: "var(--fs-2xs)", padding: "2px 6px" } as React.CSSProperties}>
                         <span className="fw-icon">{dev.icon}</span>
                         {dev.label}
                       </span>
@@ -813,7 +829,7 @@ function ServicesPage({ ports, traffic }: { ports: PortInfo[]; traffic: Record<n
                       {group.ports.length} port{group.ports.length !== 1 ? "s" : ""} · {totalConns} conn{totalConns !== 1 ? "s" : ""}
                     </div>
                   </div>
-                  <span className="status-badge status-active" style={{ fontSize: 8, padding: "2px 6px" }}>RUNNING</span>
+                  <span className="status-badge status-active" style={{ fontSize: "var(--fs-3xs)", padding: "2px 6px" }}>RUNNING</span>
                 </div>
 
                 <div className="svc-sparkline-wrap">

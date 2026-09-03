@@ -163,3 +163,93 @@ fn now_millis() -> u64 {
 lazy_static::lazy_static! {
     pub static ref LOGGER: Mutex<PortLogger> = Mutex::new(PortLogger::new());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn mk_ports(ports: &[(u16, u32, &str)]) -> Vec<(u16, u32, String, Option<String>)> {
+        ports.iter().map(|(p, pid, name)| (*p, *pid, name.to_string(), None)).collect()
+    }
+
+    #[test]
+    fn started_event_on_new_port() {
+        let mut lg = PortLogger::new();
+        let ports = mk_ports(&[(3000, 111, "node")]);
+        let ev = lg.update(&ports, &HashMap::new());
+        assert_eq!(ev.len(), 1);
+        assert_eq!(ev[0].port, 3000);
+        assert_eq!(ev[0].event_type, "started");
+        assert_eq!(lg.get_first_seen(3000).is_some(), true);
+    }
+
+    #[test]
+    fn no_duplicate_started_on_same_ports() {
+        let mut lg = PortLogger::new();
+        let ports = mk_ports(&[(3000, 111, "node")]);
+        lg.update(&ports, &HashMap::new());
+        let ev2 = lg.update(&ports, &HashMap::new());
+        assert_eq!(ev2.len(), 0);
+    }
+
+    #[test]
+    fn stopped_event_on_removal() {
+        let mut lg = PortLogger::new();
+        lg.update(&mk_ports(&[(3000, 111, "node")]), &HashMap::new());
+        let ev = lg.update(&[], &HashMap::new());
+        assert_eq!(ev.len(), 1);
+        assert_eq!(ev[0].event_type, "stopped");
+        assert_eq!(ev[0].port, 3000);
+    }
+
+    #[test]
+    fn traffic_samples_capped_at_30() {
+        let mut lg = PortLogger::new();
+        for _ in 0..35 {
+            lg.update(&mk_ports(&[(3000, 111, "node")]), &HashMap::from([(3000, 5)]));
+        }
+        assert_eq!(lg.get_traffic(3000).len(), 30);
+    }
+
+    #[test]
+    fn events_capped_at_200_and_reversed() {
+        let mut lg = PortLogger::new();
+        for i in 0..210 {
+            lg.update(&mk_ports(&[(1000 + i as u16, i as u32, "x")]), &HashMap::new());
+            // clear prev to force new started each time on a new port, but we need unique ports to avoid stopped
+            // Instead simulate many distinct ports over time
+        }
+        // Manually push many events via distinct ports
+        let mut lg2 = PortLogger::new();
+        for i in 0..210 {
+            let p = 3000 + (i % 50) as u16; // cycle to cause stopped/started
+            lg2.update(&mk_ports(&[(p, i as u32, "x")]), &HashMap::new());
+        }
+        assert!(lg2.get_events().len() <= 200);
+        // get_events reverses: most recent first
+        let evs = lg2.get_events();
+        if evs.len() >= 2 {
+            assert!(evs[0].timestamp >= evs[1].timestamp);
+        }
+    }
+
+    #[test]
+    fn first_seen_not_overwritten() {
+        let mut lg = PortLogger::new();
+        lg.update(&mk_ports(&[(3000, 111, "a")]), &HashMap::new());
+        let first = lg.get_first_seen(3000).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        lg.update(&mk_ports(&[(3000, 111, "a")]), &HashMap::new());
+        assert_eq!(lg.get_first_seen(3000).unwrap(), first);
+    }
+
+    #[test]
+    fn get_all_traffic() {
+        let mut lg = PortLogger::new();
+        lg.update(&mk_ports(&[(3000, 1, "a"), (5173, 2, "b")]), &HashMap::from([(3000, 2), (5173, 5)]));
+        let all = lg.get_all_traffic();
+        assert_eq!(all[&3000][0].connections, 2);
+        assert_eq!(all[&5173][0].connections, 5);
+    }
+}
