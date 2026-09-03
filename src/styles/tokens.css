@@ -1,0 +1,35 @@
+:root {
+  --surface-app: #0a0a0a;
+  --surface-shell: #0d0d0d;
+  --surface-primary: #111111;
+  --surface-hover: #171717;
+  --surface-selected: #1d1d1d;
+  --border-default: #262626;
+  --text-primary: #f5f5f5;
+  --text-secondary: #a3a3a3;
+  --text-muted: #666666;
+  --text-disabled: #444444;
+  --danger: #b86a6a;
+  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  --fs-scale: 1;
+  --sidebar-width: 232px;
+  --titlebar-height: 46px;
+
+  --fs-3xs: calc(10px * var(--fs-scale));
+  --fs-2xs: calc(11px * var(--fs-scale));
+  --fs-xs: calc(12px * var(--fs-scale));
+  --fs-sm: calc(13px * var(--fs-scale));
+  --fs-md: calc(14px * var(--fs-scale));
+  --fs-base: calc(15px * var(--fs-scale));
+  --fs-lg: calc(17px * var(--fs-scale));
+  --fs-xl: calc(19px * var(--fs-scale));
+  --fs-2xl: calc(21px * var(--fs-scale));
+  --fs-3xl: calc(23px * var(--fs-scale));
+  --fs-4xl: calc(25px * var(--fs-scale));
+  --fs-5xl: calc(28px * var(--fs-scale));
+
+  --focus-ring: #a3a3a3;
+  --transition-fast: 120ms;
+  --transition-base: 150ms;
+}
