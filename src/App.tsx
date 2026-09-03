@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState, useMemo } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 import PortMap from "./PortMap";
 import type { NavPage, PortEvent, PortFilter, PortInfo, TrafficByPort } from "./app/types";
+import { usePortPalData } from "./app/usePortPalData";
 import { countPortsByCategory, DEV_PORTS, filterPorts, getServiceName, getStatus, timeAgo } from "./utils/helpers";
 
 /* Multipliers for --fs-scale, the root of the type scale in App.css. */
@@ -61,133 +61,29 @@ function Sparkline({ data, color, width = 64, height = 20 }: {
 }
 
 export default function App() {
-  const [ports, setPorts] = useState<PortInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [killing, setKilling] = useState<Set<number>>(new Set());
-  const [restarting, setRestarting] = useState<Set<number>>(new Set());
-  const [killedPorts, setKilledPorts] = useState<Map<number, PortInfo>>(new Map());
   const [search, setSearch] = useState("");
-  const [toast, setToast] = useState<string | null>(null);
   const [page, setPage] = useState<NavPage>("ports");
   const [portFilter, setPortFilter] = useState<PortFilter>("all");
-  const [events, setEvents] = useState<PortEvent[]>([]);
-  const [traffic, setTraffic] = useState<TrafficByPort>({});
-  const [firstSeen, setFirstSeen] = useState<Record<number, number>>({});
   const [fontScale, setFontScale] = useState<number>(loadFontScale);
+  const {
+    ports,
+    events,
+    traffic,
+    killedPorts,
+    killing,
+    restarting,
+    observedAt,
+    loading,
+    toast,
+    refreshEvents,
+    killPort,
+    restartPort,
+  } = usePortPalData();
 
   useEffect(() => {
     document.documentElement.style.setProperty("--fs-scale", String(fontScale));
     try { localStorage.setItem(FONT_SCALE_KEY, String(fontScale)); } catch {}
   }, [fontScale]);
-
-  const fetchPorts = useCallback(async () => {
-    try {
-      const result = await invoke<PortInfo[]>("get_ports");
-      setPorts(result);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const fetchEvents = useCallback(async () => {
-    try {
-      const ev = await invoke<PortEvent[]>("get_port_events");
-      setEvents(ev);
-    } catch {}
-  }, []);
-
-  const fetchTraffic = useCallback(async () => {
-    try {
-      const t = await invoke<TrafficByPort>("get_port_traffic");
-      setTraffic(t);
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    fetchPorts();
-    fetchEvents();
-    fetchTraffic();
-
-    // Poll traffic samples every 4s (samples accumulate even without port changes)
-    const trafficTimer = setInterval(fetchTraffic, 4000);
-
-    let unlisten1: (() => void) | null = null;
-    let unlisten2: (() => void) | null = null;
-
-    import("@tauri-apps/api/event").then(({ listen }) => {
-      listen<PortInfo[]>("ports-updated", (event) => {
-        setPorts(event.payload);
-        setLoading(false);
-        setKilledPorts((prev) => {
-          const livePorts = new Set(event.payload.map((p: PortInfo) => p.port));
-          const next = new Map(prev);
-          for (const port of next.keys()) {
-            if (livePorts.has(port)) next.delete(port);
-          }
-          return next;
-        });
-        // Refresh traffic data when ports update
-        fetchTraffic();
-      }).then((fn) => { unlisten1 = fn; });
-
-      listen<PortEvent[]>("port-events", (event) => {
-        setEvents((prev) => [...event.payload, ...prev].slice(0, 200));
-        // Track first seen
-        for (const ev of event.payload) {
-          if (ev.event_type === "started") {
-            setFirstSeen((prev) => ({ ...prev, [ev.port]: ev.timestamp }));
-          }
-        }
-      }).then((fn) => { unlisten2 = fn; });
-    });
-
-    return () => {
-      clearInterval(trafficTimer);
-      if (unlisten1) unlisten1();
-      if (unlisten2) unlisten2();
-    };
-  }, [fetchPorts, fetchEvents, fetchTraffic]);
-
-  const handleKill = async (pid: number) => {
-    const port = ports.find((p) => p.pid === pid);
-    if (!port) return;
-    setKilling((prev) => new Set(prev).add(pid));
-    try {
-      await invoke("kill_process", { pid });
-      showToast(`Killed ${port.process_name} on :${port.port}`);
-      setPorts((prev) => prev.filter((p) => p.pid !== pid));
-      if (port.start_cmd && port.project_path) {
-        setKilledPorts((prev) => new Map(prev).set(port.port, port));
-      }
-    } catch {
-      showToast(`Failed to kill PID ${pid}`);
-    } finally {
-      setKilling((prev) => { const n = new Set(prev); n.delete(pid); return n; });
-    }
-  };
-
-  const handleRestart = async (pid: number, cmd: string, cwd: string) => {
-    const port = ports.find((p) => p.pid === pid)
-      ?? [...killedPorts.values()].find((p) => p.pid === pid);
-    if (!port) return;
-    setRestarting((prev) => new Set(prev).add(pid));
-    try {
-      await invoke("restart_process", { pid, cmd, cwd });
-      showToast(`Restarting ${port.project_name ?? port.process_name}…`);
-      setKilledPorts((prev) => { const n = new Map(prev); n.delete(port.port); return n; });
-    } catch (e) {
-      showToast(`Failed to restart: ${e}`);
-    } finally {
-      setRestarting((prev) => { const n = new Set(prev); n.delete(pid); return n; });
-    }
-  };
-
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
-  };
 
   const filteredPorts = filterPorts(ports, search, portFilter);
   const portCounts = countPortsByCategory(ports);
@@ -283,7 +179,7 @@ export default function App() {
                 </div>
                 <button
                   className="kill-all-btn"
-                  onClick={() => filteredPorts.forEach((p) => handleKill(p.pid))}
+                  onClick={() => filteredPorts.forEach((p) => killPort(p))}
                   disabled={filteredPorts.length === 0}
                 >
                   Kill All ({filteredPorts.length})
@@ -330,7 +226,7 @@ export default function App() {
                         const samples = traffic[p.port] || [];
                         const sparkData = samples.map((s) => s.connections);
                         const lastConn = samples[samples.length - 1]?.connections ?? 0;
-                        const seen = firstSeen[p.port];
+                        const seen = observedAt[p.port];
 
                         return (
                           <tr key={`${p.pid}-${p.port}`} className={isKilling || isRestarting ? "row-disabled" : ""}>
@@ -366,11 +262,11 @@ export default function App() {
                             </td>
                             <td className="td-actions">
                               {canRestart && (
-                                <button className="action-btn restart always-visible" onClick={() => handleRestart(p.pid, p.start_cmd!, p.project_path!)} disabled={isKilling || isRestarting} title={`Restart: ${p.start_cmd}`}>
+                                <button className="action-btn restart always-visible" onClick={() => restartPort(p)} disabled={isKilling || isRestarting} title={`Restart: ${p.start_cmd}`}>
                                   {isRestarting ? <span className="mini-spinner" /> : "↻"}
                                 </button>
                               )}
-                              <button className="action-btn kill always-visible" onClick={() => handleKill(p.pid)} disabled={isKilling || isRestarting} title={`Kill PID ${p.pid}`}>
+                              <button className="action-btn kill always-visible" onClick={() => killPort(p)} disabled={isKilling || isRestarting} title={`Kill PID ${p.pid}`}>
                                 {isKilling ? <span className="mini-spinner" /> : "✕"}
                               </button>
                             </td>
@@ -390,7 +286,7 @@ export default function App() {
                             <td className="td-time">—</td>
                             <td className="td-actions">
                               {p.start_cmd && p.project_path && (
-                                <button className="action-btn restart-visible" onClick={() => handleRestart(p.pid, p.start_cmd!, p.project_path!)} disabled={restarting.has(p.pid)}>
+                                <button className="action-btn restart-visible" onClick={() => restartPort(p)} disabled={restarting.has(p.pid)}>
                                   {restarting.has(p.pid) ? <span className="mini-spinner" /> : "↻"}
                                 </button>
                               )}
@@ -415,7 +311,7 @@ export default function App() {
           {page === "services" && <ServicesPage ports={ports} traffic={traffic} />}
 
           {/* ════════ LOGS ════════ */}
-          {page === "logs" && <LogsPage events={events} onRefresh={fetchEvents} />}
+          {page === "logs" && <LogsPage events={events} onRefresh={refreshEvents} />}
 
           {/* ════════ SETTINGS ════════ */}
           {page === "settings" && (
