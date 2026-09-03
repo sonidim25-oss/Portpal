@@ -19,15 +19,17 @@ function formatLastScan(lastScanAt: number | null): string {
 
 export function MonitoringStatus({ ports, lastScanAt }: MonitoringStatusProps) {
   const processCount = new Set(ports.map((port) => port.pid)).size;
+  const processSummary = `${processCount} process${processCount === 1 ? "" : "es"}, ${ports.length} port${ports.length === 1 ? "" : "s"}`;
+  const scanSummary = `Last scan: ${formatLastScan(lastScanAt)}`;
 
   return (
-    <section className="shell-monitoring-status" aria-label="Monitoring status">
+    <section className="shell-monitoring-status" aria-label={`Monitoring: ${processSummary}. ${scanSummary}`}>
       <div className="shell-monitoring-status__heading">
         <span className="shell-monitoring-status__indicator" aria-hidden="true" />
-        <span>Monitoring</span>
+        <span className="shell-monitoring-status__heading-copy">Monitoring</span>
       </div>
-      <p>{processCount} process{processCount === 1 ? "" : "es"}, {ports.length} port{ports.length === 1 ? "" : "s"}</p>
-      <p className="shell-monitoring-status__scan">Last scan: {formatLastScan(lastScanAt)}</p>
+      <p>{processSummary}</p>
+      <p className="shell-monitoring-status__scan">{scanSummary}</p>
     </section>
   );
 }

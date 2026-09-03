@@ -72,4 +72,34 @@ describe("AppShell", () => {
       "Settings",
     ]);
   });
+
+  it("keeps the PortPal identity in the sidebar while reserving the titlebar for window controls", () => {
+    render(
+      <AppShell page="ports" onNavigate={() => {}} ports={ports} lastScanAt={Date.now() - 2_000}>
+        <div>Ports content</div>
+      </AppShell>,
+    );
+
+    const navigation = screen.getByRole("navigation", { name: "Primary navigation" });
+    const sidebar = navigation.closest("aside");
+    expect(sidebar).not.toBeNull();
+    expect(within(sidebar!).getByText("PortPal")).toBeVisible();
+    expect(within(screen.getByRole("banner")).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Minimize",
+      "Maximize",
+      "Close",
+    ]);
+  });
+
+  it("gives compact monitoring users the complete current status", () => {
+    render(
+      <AppShell page="ports" onNavigate={() => {}} ports={ports} lastScanAt={Date.now() - 2_000}>
+        <div>Ports content</div>
+      </AppShell>,
+    );
+
+    expect(screen.getByRole("region", {
+      name: "Monitoring: 1 process, 2 ports. Last scan: 2s ago",
+    })).toBeVisible();
+  });
 });

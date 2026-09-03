@@ -4,10 +4,6 @@ import { IconButton } from "../ui/controls";
 export function Titlebar() {
   return (
     <header className="shell-titlebar" data-tauri-drag-region>
-      <div className="shell-titlebar__brand">
-        <span className="shell-titlebar__mark" aria-hidden="true">P</span>
-        <span>PortPal</span>
-      </div>
       <div className="shell-titlebar__controls">
         <IconButton className="shell-titlebar__button" label="Minimize" onClick={() => getCurrentWindow().minimize()}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>

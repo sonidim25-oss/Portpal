@@ -28,6 +28,10 @@ const navigationItems: NavigationItem[] = [
 export function Sidebar({ page, onNavigate, ports, lastScanAt }: SidebarProps) {
   return (
     <aside className="shell-sidebar">
+      <div className="shell-sidebar__brand">
+        <span className="shell-sidebar__mark" aria-hidden="true">P</span>
+        <span>PortPal</span>
+      </div>
       <nav className="shell-sidebar__navigation" aria-label="Primary navigation">
         {navigationItems.map((item) => {
           const active = page === item.page;

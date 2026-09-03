@@ -15,11 +15,9 @@ type AppShellProps = {
 export function AppShell({ page, onNavigate, ports, lastScanAt, children }: AppShellProps) {
   return (
     <div className="app app-shell">
+      <Sidebar page={page} onNavigate={onNavigate} ports={ports} lastScanAt={lastScanAt} />
       <Titlebar />
-      <div className="app-shell__body">
-        <Sidebar page={page} onNavigate={onNavigate} ports={ports} lastScanAt={lastScanAt} />
-        <main className="content app-shell__content">{children}</main>
-      </div>
+      <main className="content app-shell__content">{children}</main>
     </div>
   );
 }
