@@ -2,9 +2,10 @@ import { useEffect, useState, useMemo } from "react";
 import "./App.css";
 import PortMap from "./PortMap";
 import { AppShell } from "./components/shell/AppShell";
-import type { NavPage, PortEvent, PortFilter, PortInfo, TrafficByPort } from "./app/types";
+import type { NavPage, PortEvent, PortInfo, TrafficByPort } from "./app/types";
 import { usePortPalData } from "./app/usePortPalData";
-import { countPortsByCategory, DEV_PORTS, filterPorts, getServiceName, getStatus, timeAgo } from "./utils/helpers";
+import { PortsPage } from "./features/ports/PortsPage";
+import { DEV_PORTS, getServiceName, timeAgo } from "./utils/helpers";
 
 /* Multipliers for --fs-scale, the root of the type scale in App.css. */
 const TEXT_SIZES = [
@@ -60,9 +61,7 @@ function Sparkline({ data, color, width = 64, height = 20 }: {
 }
 
 export default function App() {
-  const [search, setSearch] = useState("");
   const [page, setPage] = useState<NavPage>("ports");
-  const [portFilter, setPortFilter] = useState<PortFilter>("all");
   const [fontScale, setFontScale] = useState<number>(loadFontScale);
   const {
     ports,
@@ -74,7 +73,9 @@ export default function App() {
     observedAt,
     lastScanAt,
     loading,
+    errors,
     toast,
+    refreshPorts,
     refreshEvents,
     killPort,
     restartPort,
@@ -84,9 +85,6 @@ export default function App() {
     document.documentElement.style.setProperty("--fs-scale", String(fontScale));
     try { localStorage.setItem(FONT_SCALE_KEY, String(fontScale)); } catch {}
   }, [fontScale]);
-
-  const filteredPorts = filterPorts(ports, search, portFilter);
-  const portCounts = countPortsByCategory(ports);
 
   const fwSet = new Set(ports.map((p) => DEV_PORTS[p.port]?.label).filter(Boolean));
   const activeConns = Object.values(traffic).reduce((sum, samples) => {
@@ -111,168 +109,20 @@ export default function App() {
 
           {/* ════════ PORTS ════════ */}
           {page === "ports" && (
-            <>
-              <div className="search-bar">
-                <svg className="search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.5"/>
-                  <path d="M9.5 9.5L13 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search ports or services..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="search-input"
-                />
-                <button className="map-toggle-btn" onClick={() => setPage("map")} title="Port Map">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                    <circle cx="3" cy="7" r="2" stroke="currentColor" strokeWidth="1.3"/>
-                    <circle cx="11" cy="3" r="2" stroke="currentColor" strokeWidth="1.3"/>
-                    <circle cx="11" cy="11" r="2" stroke="currentColor" strokeWidth="1.3"/>
-                    <line x1="4.8" y1="6" x2="9.2" y2="3.8" stroke="currentColor" strokeWidth="1.3"/>
-                    <line x1="4.8" y1="8" x2="9.2" y2="10.2" stroke="currentColor" strokeWidth="1.3"/>
-                  </svg>
-                </button>
-              </div>
-
-              {/* Filter tabs */}
-              <div className="port-tabs">
-                <div className="tab-group">
-                  <button className={`tab-btn ${portFilter === "all" ? "active" : ""}`} onClick={() => setPortFilter("all")}>
-                    All <span className="tab-count">{portCounts.all}</span>
-                  </button>
-                  <button className={`tab-btn ${portFilter === "dev" ? "active" : ""}`} onClick={() => setPortFilter("dev")}>
-                    Dev <span className="tab-count">{portCounts.dev}</span>
-                  </button>
-                  <button className={`tab-btn ${portFilter === "system" ? "active" : ""}`} onClick={() => setPortFilter("system")}>
-                    System <span className="tab-count">{portCounts.system}</span>
-                  </button>
-                  <button className={`tab-btn ${portFilter === "other" ? "active" : ""}`} onClick={() => setPortFilter("other")}>
-                    Other <span className="tab-count">{portCounts.other}</span>
-                  </button>
-                </div>
-                <button
-                  className="kill-all-btn"
-                  onClick={() => filteredPorts.forEach((p) => killPort(p))}
-                  disabled={filteredPorts.length === 0}
-                >
-                  Kill All ({filteredPorts.length})
-                </button>
-              </div>
-
-              <div className="summary-line">
-                {filteredPorts.length} active connection{filteredPorts.length !== 1 ? "s" : ""}, {fwSet.size} framework{fwSet.size !== 1 ? "s" : ""} detected
-              </div>
-
-              {loading ? (
-                <div className="loading-state">
-                  <div className="loader" />
-                  <span>Scanning ports…</span>
-                </div>
-              ) : filteredPorts.length === 0 && killedPorts.size === 0 ? (
-                <div className="empty-state">
-                  <div className="empty-ring" />
-                  <span>No ports in use</span>
-                  <span className="empty-sub">Start a server and it'll appear here</span>
-                </div>
-              ) : (
-                <div className="table-wrap">
-                  <table className="port-table">
-                    <thead>
-                      <tr>
-                        <th>PORT</th>
-                        <th>SERVICE</th>
-                        <th>PROCESS</th>
-                        <th>STATUS</th>
-                        <th>FRAMEWORK</th>
-                        <th>TRAFFIC</th>
-                        <th>LAST ACTIVE</th>
-                        <th className="th-right">ACTIONS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredPorts.map((p) => {
-                        const dev = DEV_PORTS[p.port];
-                        const status = getStatus(p);
-                        const isKilling = killing.has(p.pid);
-                        const isRestarting = restarting.has(p.pid);
-                        const canRestart = !!p.start_cmd && !!p.project_path;
-                        const samples = traffic[p.port] || [];
-                        const sparkData = samples.map((s) => s.connections);
-                        const lastConn = samples[samples.length - 1]?.connections ?? 0;
-                        const seen = observedAt[p.port];
-
-                        return (
-                          <tr key={`${p.pid}-${p.port}`} className={isKilling || isRestarting ? "row-disabled" : ""}>
-                            <td className="td-port">
-                              <span className="port-dot" style={{ background: dev ? "#22c55e" : "#6e7681" }} />
-                              <span className="port-num">{p.port}</span>
-                            </td>
-                            <td className="td-service">{getServiceName(p)}</td>
-                            <td className="td-process">
-                              <code>{p.start_cmd ? p.start_cmd.split(" ").slice(0, 2).join(" ") : p.process_name}</code>
-                            </td>
-                            <td>
-                              <span className={`status-badge ${status.cls}`}>{status.label}</span>
-                            </td>
-                            <td>
-                              {dev ? (
-                                <span className="fw-badge" style={{ "--fw-color": dev.color } as React.CSSProperties}>
-                                  <span className="fw-icon">{dev.icon}</span>
-                                  {dev.label}
-                                </span>
-                              ) : (
-                                <span className="fw-badge fw-generic">{p.protocol}</span>
-                              )}
-                            </td>
-                            <td className="td-traffic">
-                              <div className="traffic-cell">
-                                <span className="traffic-rate">{lastConn > 0 ? `${lastConn} conn` : "0"}</span>
-                                <Sparkline data={sparkData} color={dev?.color ?? "#7c6fff"} />
-                              </div>
-                            </td>
-                            <td className="td-time">
-                              {seen ? timeAgo(seen) : "—"}
-                            </td>
-                            <td className="td-actions">
-                              {canRestart && (
-                                <button className="action-btn restart always-visible" onClick={() => restartPort(p)} disabled={isKilling || isRestarting} title={`Restart: ${p.start_cmd}`}>
-                                  {isRestarting ? <span className="mini-spinner" /> : "↻"}
-                                </button>
-                              )}
-                              <button className="action-btn kill always-visible" onClick={() => killPort(p)} disabled={isKilling || isRestarting} title={`Kill PID ${p.pid}`}>
-                                {isKilling ? <span className="mini-spinner" /> : "✕"}
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {[...killedPorts.values()].map((p) => {
-                        const dev = DEV_PORTS[p.port];
-                        return (
-                          <tr key={`dead-${p.port}`} className="row-dead">
-                            <td className="td-port"><span className="port-dot" style={{ background: "#ef4444" }} /><span className="port-num">{p.port}</span></td>
-                            <td className="td-service">{getServiceName(p)}</td>
-                            <td className="td-process"><code>{p.process_name}</code></td>
-                            <td><span className="status-badge status-stopped">STOPPED</span></td>
-                            <td>{dev ? <span className="fw-badge" style={{ "--fw-color": dev.color, opacity: 0.5 } as React.CSSProperties}><span className="fw-icon">{dev.icon}</span>{dev.label}</span> : <span className="fw-badge fw-generic">{p.protocol}</span>}</td>
-                            <td className="td-traffic">—</td>
-                            <td className="td-time">—</td>
-                            <td className="td-actions">
-                              {p.start_cmd && p.project_path && (
-                                <button className="action-btn restart-visible" onClick={() => restartPort(p)} disabled={restarting.has(p.pid)}>
-                                  {restarting.has(p.pid) ? <span className="mini-spinner" /> : "↻"}
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
+            <PortsPage
+              ports={ports}
+              traffic={traffic}
+              observedAt={observedAt}
+              killedPorts={killedPorts}
+              killing={killing}
+              restarting={restarting}
+              loading={loading}
+              error={errors.ports}
+              onRetry={refreshPorts}
+              onKill={killPort}
+              onRestart={restartPort}
+              onOpenMap={() => setPage("map")}
+            />
           )}
 
           {/* ════════ TRAFFIC ════════ */}
