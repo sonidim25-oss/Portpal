@@ -148,6 +148,43 @@ describe("PortsPage", () => {
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
   });
 
+  it("closes a selected live inspector when search hides its row", async () => {
+    const user = userEvent.setup();
+    renderPorts();
+
+    await user.click(screen.getByRole("row", { name: /3000.*node.*Web App/i }));
+    expect(screen.getByRole("complementary", { name: "Port inspector for :3000" })).toBeVisible();
+
+    await user.type(screen.getByRole("searchbox", { name: "Search ports" }), "lsass");
+
+    await waitFor(() => expect(screen.queryByRole("complementary")).not.toBeInTheDocument());
+  });
+
+  it("closes a selected live inspector when a category hides its row", async () => {
+    const user = userEvent.setup();
+    renderPorts();
+
+    await user.click(screen.getByRole("row", { name: /3000.*node.*Web App/i }));
+    expect(screen.getByRole("complementary", { name: "Port inspector for :3000" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "System 1" }));
+
+    await waitFor(() => expect(screen.queryByRole("complementary")).not.toBeInTheDocument());
+  });
+
+  it("closes a selected live inspector when an advanced filter hides its row", async () => {
+    const user = userEvent.setup();
+    renderPorts();
+
+    await user.click(screen.getByRole("row", { name: /9229.*UDP.*node/i }));
+    expect(screen.getByRole("complementary", { name: "Port inspector for :9229" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Protocol" }), "TCP");
+
+    await waitFor(() => expect(screen.queryByRole("complementary")).not.toBeInTheDocument());
+  });
+
   it("keeps individual Kill and conditional Restart actions directly reachable with original ports", async () => {
     const user = userEvent.setup();
     const { onKill, onRestart } = renderPorts({ killedPorts: new Map([[stoppedPort.port, stoppedPort]]) });
@@ -165,17 +202,53 @@ describe("PortsPage", () => {
     expect(onRestart).toHaveBeenCalledWith(stoppedPort);
   });
 
-  it("disables only the affected row actions while kill or restart is pending", () => {
+  it("activates Kill with Enter without selecting its row", async () => {
+    const user = userEvent.setup();
+    const { onKill } = renderPorts();
+    const killButton = screen.getByRole("button", { name: "Kill port 3000" });
+
+    killButton.focus();
+    await user.keyboard("{Enter}");
+
+    expect(onKill).toHaveBeenCalledWith(devPort);
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+  });
+
+  it("activates Restart with Space without selecting its row", async () => {
+    const user = userEvent.setup();
+    const { onRestart } = renderPorts();
+    const restartButton = screen.getByRole("button", { name: "Restart port 3000" });
+
+    restartButton.focus();
+    await user.keyboard(" ");
+
+    expect(onRestart).toHaveBeenCalledWith(devPort);
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+  });
+
+  it("shows operation-specific busy feedback while kill or restart is pending", () => {
     renderPorts({
       killedPorts: new Map([[stoppedPort.port, stoppedPort]]),
       killing: new Set([devPort.pid]),
       restarting: new Set([stoppedPort.pid]),
     });
 
-    expect(screen.getByRole("button", { name: "Kill port 3000" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Restart port 3000" })).toBeDisabled();
+    const killingButton = screen.getByRole("button", { name: "Killing port 3000" });
+    expect(killingButton).toBeDisabled();
+    expect(killingButton).toHaveAttribute("aria-busy", "true");
+    expect(killingButton.querySelector(".ports-table__spinner")).toBeInTheDocument();
+
+    const blockedRestartButton = screen.getByRole("button", { name: "Restart port 3000" });
+    expect(blockedRestartButton).toBeDisabled();
+    expect(blockedRestartButton).not.toHaveAttribute("aria-busy");
+    expect(blockedRestartButton.querySelector(".ports-table__spinner")).not.toBeInTheDocument();
+
     expect(screen.getByRole("button", { name: "Kill port 49664" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Restart port 5173" })).toBeDisabled();
+
+    const restartingButton = screen.getByRole("button", { name: "Restarting port 5173" });
+    expect(restartingButton).toBeDisabled();
+    expect(restartingButton).toHaveAttribute("aria-busy", "true");
+    expect(restartingButton.querySelector(".ports-table__spinner")).toBeInTheDocument();
   });
 
   it("kills the current filtered results immediately without confirmation", async () => {

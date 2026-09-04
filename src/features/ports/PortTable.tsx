@@ -27,54 +27,68 @@ function stopRowSelection(event: MouseEvent<HTMLButtonElement>) {
 }
 
 function RestartButton({
+  busy,
   disabled,
   onRestart,
   port,
 }: {
+  busy: boolean;
   disabled: boolean;
   onRestart: (port: PortInfo) => Promise<void>;
   port: PortInfo;
 }) {
   return (
     <IconButton
-      label={`Restart port ${port.port}`}
+      label={`${busy ? "Restarting" : "Restart"} port ${port.port}`}
       className="ports-table__action"
       disabled={disabled}
+      aria-busy={busy || undefined}
       onClick={(event) => {
         stopRowSelection(event);
         void onRestart(port);
       }}
     >
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M13 5V2m0 0h-3M13 2l-2.1 2.1A5 5 0 1 0 13 9" />
-      </svg>
+      {busy ? (
+        <span className="ports-table__spinner" aria-hidden="true" />
+      ) : (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M13 5V2m0 0h-3M13 2l-2.1 2.1A5 5 0 1 0 13 9" />
+        </svg>
+      )}
     </IconButton>
   );
 }
 
 function KillButton({
+  busy,
   disabled,
   onKill,
   port,
 }: {
+  busy: boolean;
   disabled: boolean;
   onKill: (port: PortInfo) => Promise<void>;
   port: PortInfo;
 }) {
   return (
     <IconButton
-      label={`Kill port ${port.port}`}
+      label={`${busy ? "Killing" : "Kill"} port ${port.port}`}
       className="ports-table__action ports-table__action--danger"
       disabled={disabled}
+      aria-busy={busy || undefined}
       onClick={(event) => {
         stopRowSelection(event);
         void onKill(port);
       }}
     >
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <circle cx="8" cy="8" r="5.5" />
-        <path d="m6 6 4 4m0-4-4 4" />
-      </svg>
+      {busy ? (
+        <span className="ports-table__spinner" aria-hidden="true" />
+      ) : (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="5.5" />
+          <path d="m6 6 4 4m0-4-4 4" />
+        </svg>
+      )}
     </IconButton>
   );
 }
@@ -102,10 +116,13 @@ function PortRow({
   selected: boolean;
   traffic: TrafficByPort;
 }) {
-  const pending = killing.has(port.pid) || restarting.has(port.pid);
+  const isKilling = killing.has(port.pid);
+  const isRestarting = restarting.has(port.pid);
+  const pending = isKilling || isRestarting;
   const restartable = Boolean(port.start_cmd && port.project_path);
   const activate = () => onSelect(port);
   const activateFromKeyboard = (event: KeyboardEvent<HTMLTableRowElement>) => {
+    if (event.target !== event.currentTarget) return;
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     activate();
@@ -150,9 +167,9 @@ function PortRow({
       <td>{observedAt === undefined ? "—" : timeAgo(observedAt)}</td>
       <td className="ports-table__actions">
         {restartable && (
-          <RestartButton port={port} disabled={pending} onRestart={onRestart} />
+          <RestartButton port={port} busy={isRestarting} disabled={pending} onRestart={onRestart} />
         )}
-        {!killed && <KillButton port={port} disabled={pending} onKill={onKill} />}
+        {!killed && <KillButton port={port} busy={isKilling} disabled={pending} onKill={onKill} />}
       </td>
     </tr>
   );

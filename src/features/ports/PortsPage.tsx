@@ -50,7 +50,7 @@ export function PortsPage({
     () => filterPorts(ports, search, category, advanced, traffic),
     [advanced, category, ports, search, traffic],
   );
-  const selectedLivePort = selected ? ports.find((port) => samePort(port, selected)) : undefined;
+  const selectedLivePort = selected ? filteredPorts.find((port) => samePort(port, selected)) : undefined;
   const selectedKilledPort = selected
     ? [...killedPorts.values()].find((port) => samePort(port, selected))
     : undefined;

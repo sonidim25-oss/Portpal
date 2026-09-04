@@ -274,6 +274,21 @@
   color: var(--danger);
 }
 
+.ports-table__spinner {
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: ports-table-spin 700ms linear infinite;
+}
+
+@keyframes ports-table-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .ports-filters__popover-wrap {
   position: relative;
   margin-left: auto;
