@@ -57,6 +57,17 @@
   -webkit-app-region: no-drag;
 }
 
+.shell-titlebar__status {
+  margin-right: auto;
+  padding: 0 12px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
 .shell-titlebar__button.ui-icon-button {
   width: 46px;
   height: 100%;
