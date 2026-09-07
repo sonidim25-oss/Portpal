@@ -11,6 +11,12 @@
   --text-secondary: #a3a3a3;
   --text-muted: #666666;
   --text-disabled: #444444;
+  --scrollbar-size: 6px;
+  --scrollbar-radius: 3px;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: var(--border-default);
+  --scrollbar-thumb-hover: var(--text-disabled);
+  --scrollbar-thumb-active: var(--text-muted);
   --danger: #b86a6a;
   --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
