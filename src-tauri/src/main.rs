@@ -5,7 +5,6 @@ mod tray;
 mod connections;
 mod logger;
 
-use tauri::Manager;
 use std::collections::HashMap;
 
 fn main() {

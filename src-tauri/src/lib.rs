@@ -3,13 +3,7 @@ mod tray;
 mod connections;
 mod logger;
 
-use tauri::Manager;
 use std::collections::HashMap;
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
 
 #[tauri::command]
 fn get_ports() -> Vec<scanner::PortInfo> {
@@ -57,7 +51,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            greet,
             get_ports,
             kill_process,
             restart_process,
