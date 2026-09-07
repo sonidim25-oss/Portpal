@@ -146,7 +146,7 @@ function PortRow({
           ? <span className="ports-table__stopped-label">STOPPED</span>
           : <span className="ui-visually-hidden">Listening</span>}
       </td>
-      <td className="ports-table__project">
+      <td>
         <span className="ports-table__value-stack">
           <span>{port.process_name}</span>
           {port.start_cmd && (
@@ -154,7 +154,7 @@ function PortRow({
           )}
         </span>
       </td>
-      <td>
+      <td className="ports-table__project">
         <span className="ports-table__value-stack">
           <span>{port.project_name ?? "—"}</span>
           {port.project_path && (

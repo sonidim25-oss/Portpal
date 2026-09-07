@@ -36,7 +36,8 @@ export function PortTopology({ graph, grouped, selectedId, onSelect, onZoom, onS
     const maxY = (d3.max(nodes, d => d.y) ?? h) + NODE_HALF_HEIGHT;
     const availableWidth = Math.max(1, w - FIT_PADDING * 2);
     const availableHeight = Math.max(1, h - FIT_PADDING * 2);
-    const scale = Math.max(.5, Math.min(2, Math.min(availableWidth / Math.max(1, maxX-minX), availableHeight / Math.max(1, maxY-minY))));
+    // Fit can shrink the graph, but enlargement belongs to the explicit zoom controls.
+    const scale = Math.max(.5, Math.min(1, Math.min(availableWidth / Math.max(1, maxX-minX), availableHeight / Math.max(1, maxY-minY))));
     const transform = d3.zoomIdentity.translate(w/2-scale*(minX+maxX)/2, h/2-scale*(minY+maxY)/2).scale(scale);
     d3.select(el).call(zoomRef.current.transform, transform);
   }, []);
