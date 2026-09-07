@@ -122,4 +122,14 @@ describe('usePortPalData', () => {
     expect(result.current.errors).toEqual({ ports: 'ports unavailable', events: 'events unavailable', traffic: 'traffic unavailable' });
     expect(result.current.lastScanAt).toBeNull();
   });
+
+  it('exposes the existing traffic refresh callback for retry actions', async () => {
+    const gateway = createGateway();
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => result.current.refreshTraffic());
+
+    expect(gateway.getPortTraffic).toHaveBeenCalledTimes(2);
+  });
 });

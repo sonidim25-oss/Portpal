@@ -18,6 +18,7 @@ export interface UsePortPalDataResult {
   toast: string | null;
   refreshPorts(): Promise<void>;
   refreshEvents(): Promise<void>;
+  refreshTraffic(): Promise<void>;
   killPort(port: PortInfo): Promise<void>;
   restartPort(port: PortInfo): Promise<void>;
 }
@@ -189,6 +190,7 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
     toast,
     refreshPorts,
     refreshEvents,
+    refreshTraffic,
     killPort,
     restartPort,
   };
