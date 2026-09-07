@@ -1,12 +1,4 @@
-export interface PortInfo {
-  port: number;
-  pid: number;
-  process_name: string;
-  project_name: string | null;
-  project_path: string | null;
-  protocol: string;
-  start_cmd: string | null;
-}
+import type { AdvancedPortFilters, PortCategory, PortCounts, PortFilter, PortInfo, TrafficByPort } from '../app/types';
 
 export const DEV_PORTS: Record<number, { label: string; color: string; icon: string }> = {
   3000: { label: "React", color: "#61dafb", icon: "⚛" },
@@ -28,6 +20,16 @@ export const DEV_PORTS: Record<number, { label: string; color: string; icon: str
   443: { label: "HTTPS", color: "#22c55e", icon: "🔐" },
   80: { label: "HTTP", color: "#f0a500", icon: "🌐" },
 };
+
+const SYSTEM_PORTS = new Set([22, 80, 443, 3306, 5432, 6379, 27017]);
+const SYSTEM_PROCESSES = /^(system|svchost(?:\.exe)?|lsass(?:\.exe)?|postgres|redis-server|mysqld|mongod)$/i;
+
+export function classifyPort(port: PortInfo): PortCategory {
+  if (port.project_name || port.project_path) return 'dev';
+  if (SYSTEM_PORTS.has(port.port) || SYSTEM_PROCESSES.test(port.process_name)) return 'system';
+  if (DEV_PORTS[port.port]) return 'dev';
+  return 'other';
+}
 
 export function getServiceName(port: PortInfo): string {
   const dev = DEV_PORTS[port.port];
@@ -57,20 +59,46 @@ export function timeAgo(ts: number, now = Date.now()): string {
 export function filterPorts(
   ports: PortInfo[],
   search: string,
-  portFilter: "all" | "dev" | "other"
+  portFilter: PortFilter,
+  advanced?: AdvancedPortFilters,
+  traffic?: TrafficByPort
 ): PortInfo[] {
-  let list = ports;
-  if (portFilter === "dev") list = list.filter((p) => DEV_PORTS[p.port as number]);
-  else if (portFilter === "other") list = list.filter((p) => !DEV_PORTS[p.port as number]);
+  let list = portFilter === 'all' ? ports : ports.filter((port) => classifyPort(port) === portFilter);
+
+  if (advanced) {
+    list = list.filter((port) => {
+      if (advanced.protocol !== 'all' && port.protocol !== advanced.protocol) return false;
+      if (advanced.project === 'with-project' && !port.project_name && !port.project_path) return false;
+      if (advanced.project === 'without-project' && (port.project_name || port.project_path)) return false;
+      if (advanced.restartableOnly && (!port.start_cmd || !port.project_path)) return false;
+      if (advanced.connectedOnly && latestConnectionCount(traffic ?? {}, port) === 0) return false;
+      return true;
+    });
+  }
+
   const q = search.toLowerCase().trim();
   if (!q) return list;
-  return list.filter((p) => {
-    const dev = DEV_PORTS[p.port as number];
-    return (
-      String(p.port).includes(q) ||
-      p.process_name.toLowerCase().includes(q) ||
-      (p.project_name && p.project_name.toLowerCase().includes(q)) ||
-      (dev && dev.label.toLowerCase().includes(q))
-    );
-  });
+  return list.filter((port) => [
+    String(port.port),
+    port.process_name,
+    port.project_name,
+    port.project_path,
+    port.protocol,
+    port.start_cmd,
+  ].filter(Boolean).join(' ').toLowerCase().includes(q));
+}
+
+export function countPortsByCategory(ports: PortInfo[]): PortCounts {
+  const counts: PortCounts = { all: ports.length, dev: 0, system: 0, other: 0 };
+  for (const port of ports) counts[classifyPort(port)]++;
+  return counts;
+}
+
+export function latestConnectionCount(traffic: TrafficByPort, port: PortInfo): number {
+  const samples = traffic[port.port];
+  return samples?.[samples.length - 1]?.connections ?? 0;
+}
+
+export function uniqueProcessCount(ports: PortInfo[]): number {
+  return new Set(ports.map((port) => port.process_name)).size;
 }

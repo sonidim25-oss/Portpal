@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { invoke } from '@tauri-apps/api/core';
@@ -22,6 +22,10 @@ describe('App integration - invoke + ports', () => {
       if (cmd === 'get_port_traffic') return Promise.resolve({});
       if (cmd === 'kill_process') return Promise.resolve();
       if (cmd === 'restart_process') return Promise.resolve();
+      if (cmd === 'get_port_graph') return Promise.resolve({
+        nodes: mockPorts.map((port) => ({ id: `port:${port.port}`, ...port, framework: null, is_dev: Boolean(port.project_name), connection_count: 0 })),
+        edges: [],
+      });
       return Promise.resolve([]);
     });
     // listen mock returns unsubscribe
@@ -32,19 +36,18 @@ describe('App integration - invoke + ports', () => {
     render(<App />);
     // wait for fetchPorts to resolve
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('get_ports'));
-    // Ports tab should show filtered count 3 active connections
-    await waitFor(() => expect(screen.getByText(/3 active connection/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('3 listening ports')).toBeInTheDocument());
     expect(screen.getByText('3000')).toBeInTheDocument();
     expect(screen.getByText('5173')).toBeInTheDocument();
   });
 
-  it('filters by search and Dev/Other tabs', async () => {
+  it('filters by search and Dev/System tabs', async () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
 
     // Search by process_name
-    const search = screen.getByPlaceholderText(/Search ports or services/);
+    const search = screen.getByPlaceholderText('Search ports, process, project...');
     await user.type(search, 'lsass');
     expect(screen.getByText('49664')).toBeInTheDocument();
     expect(screen.queryByText('3000')).not.toBeInTheDocument();
@@ -57,9 +60,9 @@ describe('App integration - invoke + ports', () => {
     await waitFor(() => expect(screen.queryByText('49664')).not.toBeInTheDocument());
     expect(screen.getByText('3000')).toBeInTheDocument();
 
-    // Other tab should show only non-dev
-    const otherBtn = screen.getByText('Other');
-    await user.click(otherBtn);
+    // System tab should show only infrastructure ports.
+    const systemBtn = screen.getByText('System');
+    await user.click(systemBtn);
     expect(screen.getByText('49664')).toBeInTheDocument();
     expect(screen.queryByText('3000')).not.toBeInTheDocument();
   });
@@ -69,13 +72,57 @@ describe('App integration - invoke + ports', () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
 
-    const killBtn = screen.getByTitle('Kill PID 1111');
+    const killBtn = screen.getByRole('button', { name: 'Kill port 3000' });
     await user.click(killBtn);
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('kill_process', { pid: 1111 }));
     // killed port moves to dead row with STOPPED badge (kept for restart)
     await waitFor(() => expect(screen.getByText('STOPPED')).toBeInTheDocument());
     expect(await screen.findByText(/Killed node on :3000/)).toBeInTheDocument();
+  });
+
+  it('restart keeps the existing restart_process payload unchanged', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Restart port 3000' }));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('restart_process', {
+      pid: 1111,
+      cmd: 'npm run dev',
+      cwd: '/a/my-app',
+    }));
+  });
+
+  it('keeps all seven navigation destinations wired and closes the map back to Ports', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
+
+    for (const [navigation, heading] of [
+      ['Dashboard', 'Dashboard'], ['Traffic', 'Traffic Monitor'], ['Services', 'Services'],
+      ['Logs', 'Event Logs'], ['Settings', 'Settings'], ['Ports', 'Ports'], ['Port Map', 'Port Map'],
+    ] as const) {
+      await user.click(screen.getByRole('button', { name: navigation }));
+      expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Close Port Map' }));
+    expect(screen.getByRole('heading', { name: 'Ports' })).toBeInTheDocument();
+  });
+
+  it('kills only the current filtered rows immediately with unchanged PID payloads', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
+
+    await user.type(screen.getByPlaceholderText('Search ports, process, project...'), 'node');
+    await user.click(screen.getByRole('button', { name: 'Kill All' }));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('kill_process', { pid: 1111 }));
+    expect(invoke).toHaveBeenCalledWith('kill_process', { pid: 2222 });
+    expect(invoke).not.toHaveBeenCalledWith('kill_process', { pid: 3333 });
   });
 
   it('ports-updated event updates list', async () => {
@@ -89,7 +136,9 @@ describe('App integration - invoke + ports', () => {
 
     // Simulate new port arriving via tray emit
     const newPorts = [...mockPorts, { port: 8000, pid: 4444, process_name: 'python', project_name: null, project_path: null, protocol: 'TCP', start_cmd: null }];
-    portsUpdatedCb({ payload: newPorts });
+    await act(async () => {
+      portsUpdatedCb({ payload: newPorts });
+    });
 
     await waitFor(() => expect(screen.getByText('8000')).toBeInTheDocument());
   });
@@ -99,7 +148,7 @@ describe('App integration - invoke + ports', () => {
     const { unmount } = render(<App />);
     await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
 
-    await user.click(screen.getByText('Settings'));
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByText('Text size')).toBeInTheDocument();
     // Standard is the default selection.
     expect(screen.getByRole('button', { name: 'Standard' })).toHaveAttribute('aria-pressed', 'true');
@@ -111,7 +160,7 @@ describe('App integration - invoke + ports', () => {
     // The choice survives a restart.
     unmount();
     render(<App />);
-    await user.click(screen.getByText('Settings'));
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByRole('button', { name: 'Larger' })).toHaveAttribute('aria-pressed', 'true');
   });
 

@@ -1,0 +1,377 @@
+.ports-page {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  background: var(--surface-app);
+}
+
+.ports-page__header > .ui-page-header {
+  align-items: center;
+  padding: 18px 24px 16px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.ports-page__header > .ui-page-header > div:first-child {
+  flex: 0 0 220px;
+}
+
+.ports-page__header .ui-page-header__actions {
+  flex: 1 1 620px;
+  align-items: center;
+}
+
+.ports-page__header .ui-search-input-wrap {
+  flex: 1 1 auto;
+}
+
+.ports-page__header .ui-search-input {
+  min-height: 42px;
+  background: var(--surface-app);
+}
+
+.ports-page__map-button.ui-icon-button {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  background: var(--surface-app);
+}
+
+.ports-page__map-button svg,
+.ports-page__controls svg,
+.ports-table__action svg,
+.ports-filters__trigger svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.35;
+}
+
+.ports-page__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 24px 14px;
+}
+
+.ports-page__filter-controls {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ports-page__filter-controls .ui-segmented-control {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  gap: 8px;
+}
+
+.ports-page__filter-controls .ui-segmented-control__option {
+  min-height: 34px;
+  padding-inline: 12px;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  color: var(--text-secondary);
+}
+
+.ports-page__filter-controls .ui-segmented-control__option[aria-pressed="true"] {
+  border-color: var(--border-default);
+  background: var(--surface-selected);
+}
+
+.ports-page__filter-controls .ui-segmented-control__count {
+  color: inherit;
+}
+
+.ports-page__kill-all,
+.ports-filters__trigger {
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.ports-page__kill-all svg,
+.ports-filters__trigger svg {
+  width: 15px;
+  height: 15px;
+}
+
+.ports-page__workspace {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  margin: 0 16px 14px;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 9px;
+  background: var(--surface-primary);
+}
+
+.ports-page__table-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ports-page__table-pane > .ui-empty-state,
+.ports-page__table-pane > .ui-loading-state {
+  min-height: 100%;
+}
+
+.ports-table-wrap {
+  min-width: 860px;
+}
+
+.ports-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.ports-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 44px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-primary);
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  letter-spacing: 0.045em;
+  text-align: left;
+}
+
+.ports-table th:nth-child(1) { width: 13%; }
+.ports-table th:nth-child(2) { width: 22%; }
+.ports-table th:nth-child(3) { width: 23%; }
+.ports-table th:nth-child(4) { width: 10%; }
+.ports-table th:nth-child(5) { width: 13%; }
+.ports-table th:nth-child(6) { width: 11%; }
+.ports-table th:nth-child(7) { width: 96px; }
+
+.ports-table td {
+  height: 66px;
+  padding: 9px 16px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ports-table__row {
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.ports-table__row:hover,
+.ports-table__row[aria-selected="true"] {
+  background: var(--surface-hover);
+}
+
+.ports-table__row[aria-selected="true"] {
+  box-shadow: inset 2px 0 var(--text-secondary);
+}
+
+.ports-table__row--stopped {
+  color: var(--text-muted);
+  opacity: 0.68;
+}
+
+.ports-table__row--stopped:hover,
+.ports-table__row--stopped[aria-selected="true"] {
+  opacity: 1;
+}
+
+.ports-table__port {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ports-table__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+
+.ports-table__dot--stopped {
+  border: 1px solid var(--danger);
+  background: transparent;
+}
+
+.ports-table__stopped-label {
+  color: var(--danger);
+  font-size: var(--fs-3xs);
+  letter-spacing: 0.04em;
+}
+
+.ports-table__value-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.ports-table__value-stack > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ports-table__mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.ports-table__port-number {
+  font-size: var(--fs-sm);
+}
+
+.ports-table__secondary {
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+}
+
+.ports-table__actions-heading,
+.ports-table__actions {
+  text-align: right !important;
+}
+
+.ports-table__actions {
+  overflow: visible !important;
+}
+
+.ports-table__action.ui-icon-button {
+  width: 30px;
+  height: 30px;
+  margin-left: 4px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.ports-table__action.ui-icon-button:hover:not(:disabled),
+.ports-table__action.ui-icon-button:focus-visible:not(:disabled) {
+  border-color: var(--border-default);
+}
+
+.ports-table__action--danger.ui-icon-button:hover:not(:disabled),
+.ports-table__action--danger.ui-icon-button:focus-visible:not(:disabled) {
+  color: var(--danger);
+}
+
+.ports-table__spinner {
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: ports-table-spin 700ms linear infinite;
+}
+
+@keyframes ports-table-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ports-filters__popover-wrap {
+  position: relative;
+  margin-left: auto;
+}
+
+.ports-filters__popover {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 5;
+  display: grid;
+  width: 250px;
+  gap: 13px;
+  padding: 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-hover);
+}
+
+.ports-filters__field,
+.ports-filters__check {
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.ports-filters__field {
+  display: grid;
+  gap: 6px;
+}
+
+.ports-filters__field select {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-primary);
+  color: var(--text-primary);
+}
+
+.ports-filters__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ports-filters__check input {
+  accent-color: var(--text-secondary);
+}
+
+@media (max-width: 1100px) {
+  .ports-page__header > .ui-page-header > div:first-child { flex-basis: 170px; }
+  .ports-page__header > .ui-page-header { padding-inline: 18px; }
+  .ports-page__controls { padding-inline: 18px; }
+  .ports-page__workspace { margin-inline: 12px; }
+}
+
+@media (max-width: 980px) {
+  .ports-page__workspace > .port-inspector {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 4;
+    width: min(360px, calc(100% - 24px));
+  }
+}
+
+@media (max-width: 820px) {
+  .ports-table-wrap { min-width: 610px; }
+  .ports-table__project,
+  .ports-table__connections { display: none; }
+  .ports-page__header > .ui-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+    padding-block: 12px;
+  }
+
+  .ports-page__header > .ui-page-header > div:first-child { flex-basis: auto; }
+  .ports-page__header .ui-page-header__actions { width: 100%; flex-basis: auto; }
+  .ports-page__controls { align-items: flex-start; }
+  .ports-page__filter-controls { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+  .ports-filters__popover-wrap { margin-left: 0; }
+  .ports-page__filter-controls .ui-segmented-control { gap: 2px; }
+  .ports-page__filter-controls .ui-segmented-control__option { padding-inline: 8px; }
+
+}
