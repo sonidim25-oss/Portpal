@@ -1,0 +1,230 @@
+/*
+ * Port Intel styles.
+ *
+ * Every selector is prefixed `.pi-` and every custom property `--pi-`, so this
+ * file cannot collide with the rest of the app's CSS.
+ *
+ * Colours are read from the app's own tokens where they exist and fall back to
+ * a self-contained monochrome palette where they do not, which keeps the module
+ * usable on its own. Font sizes go through the app's `--fs-*` type scale so the
+ * accessibility work on font sizing applies here too; the fallbacks repeat the
+ * `--fs-scale` multiplier so the user's size preference is still honoured even
+ * if the scale tokens themselves are absent.
+ */
+
+:root {
+  --pi-fg: var(--text-primary, #e8e8ea);
+  --pi-fg-muted: var(--text-secondary, #9aa0a6);
+  --pi-surface: var(--surface-2, rgba(255, 255, 255, 0.06));
+  --pi-surface-raised: var(--surface-3, #1c1c1f);
+  --pi-border: var(--border-subtle, rgba(255, 255, 255, 0.14));
+  --pi-radius: 6px;
+  --pi-gap: 6px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --pi-fg: var(--text-primary, #1c1c1f);
+    --pi-fg-muted: var(--text-secondary, #5f6368);
+    --pi-surface: var(--surface-2, rgba(0, 0, 0, 0.05));
+    --pi-surface-raised: var(--surface-3, #ffffff);
+    --pi-border: var(--border-subtle, rgba(0, 0, 0, 0.16));
+  }
+}
+
+/* ------------------------------------------------------------------ label -- */
+
+.pi-label {
+  color: var(--pi-fg);
+  font-size: var(--fs-md, calc(14px * var(--fs-scale, 1)));
+}
+
+.pi-label--compact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--pi-gap);
+}
+
+.pi-label__port {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.pi-label__name {
+  color: var(--pi-fg-muted);
+  font-size: var(--fs-sm, calc(13px * var(--fs-scale, 1)));
+}
+
+/* ------------------------------------------------------------------ badge -- */
+
+.pi-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pi-gap);
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--pi-border);
+  border-radius: var(--pi-radius);
+  background: var(--pi-surface);
+  color: var(--pi-fg);
+  font-size: var(--fs-sm, calc(13px * var(--fs-scale, 1)));
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.pi-badge__icon {
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+.pi-badge__port {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.pi-badge__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A guess gets a dashed edge, so a heuristic never looks like a fact. */
+.pi-badge[data-confidence='process'],
+.pi-badge[data-confidence='range'] {
+  border-style: dashed;
+}
+
+/* ------------------------------------------------------------------- card -- */
+
+.pi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 340px;
+  padding: 12px 14px;
+  border: 1px solid var(--pi-border);
+  border-radius: 8px;
+  background: var(--pi-surface-raised);
+  color: var(--pi-fg);
+  text-align: left;
+}
+
+.pi-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pi-card__icon {
+  flex: 0 0 auto;
+}
+
+.pi-card__title {
+  margin: 0;
+  font-size: var(--fs-base, calc(15px * var(--fs-scale, 1)));
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.pi-card__meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--pi-gap);
+}
+
+.pi-card__chip {
+  padding: 1px 7px;
+  border: 1px solid var(--pi-border);
+  border-radius: 999px;
+  font-size: var(--fs-xs, calc(12px * var(--fs-scale, 1)));
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.pi-card__blurb,
+.pi-card__note {
+  color: var(--pi-fg-muted);
+  font-size: var(--fs-xs, calc(12px * var(--fs-scale, 1)));
+}
+
+.pi-card__blurb {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.pi-card__description,
+.pi-card__context {
+  margin: 0;
+  font-size: var(--fs-sm, calc(13px * var(--fs-scale, 1)));
+  line-height: 1.55;
+}
+
+.pi-card__context {
+  padding-left: 10px;
+  border-left: 2px solid var(--pi-border);
+  color: var(--pi-fg-muted);
+}
+
+.pi-card__context-label {
+  color: var(--pi-fg);
+  font-weight: 600;
+}
+
+.pi-card__note {
+  margin: 0;
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------- tooltip -- */
+
+.pi-tooltip {
+  position: relative;
+  display: inline-flex;
+}
+
+.pi-tooltip__trigger {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--pi-radius);
+  cursor: help;
+}
+
+.pi-tooltip__trigger:focus-visible {
+  outline: 2px solid var(--pi-fg);
+  outline-offset: 2px;
+}
+
+.pi-tooltip__panel {
+  position: absolute;
+  z-index: 60;
+  left: 0;
+  display: block;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.45));
+  /* The panel must not swallow the pointer on its way to the trigger. */
+  pointer-events: none;
+}
+
+.pi-tooltip__panel--bottom {
+  top: calc(100% + 6px);
+}
+
+.pi-tooltip__panel--top {
+  bottom: calc(100% + 6px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pi-tooltip__panel {
+    animation: pi-tooltip-in 120ms ease-out;
+  }
+}
+
+@keyframes pi-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
