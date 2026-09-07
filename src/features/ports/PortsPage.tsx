@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AdvancedPortFilters, PortFilter, PortInfo, TrafficByPort } from "../../app/types";
 import { Button, EmptyState, IconButton, LoadingState, PageHeader, SearchInput } from "../../components/ui/controls";
+void IconButton; // MVP: preserved for Port Map button
 import { PortInspector } from "../inspector/PortInspector";
 import { countPortsByCategory, filterPorts } from "../../utils/helpers";
 import { DEFAULT_ADVANCED_PORT_FILTERS, PortFilters } from "./PortFilters";
@@ -64,10 +65,13 @@ export function PortsPage({
     setSelected((current) => current && samePort(port, current) ? null : { port: port.port, pid: port.pid });
   };
 
+  // MVP: Port Map hidden - keep handler for future, silence unused
+  void onOpenMap;
   const openMap = () => {
     setSelected(null);
     onOpenMap();
   };
+  void openMap;
 
   const description = !error && (!loading || ports.length > 0)
     ? `${ports.length} listening port${ports.length === 1 ? "" : "s"}`
@@ -87,14 +91,15 @@ export function PortsPage({
                 value={search}
                 onChange={setSearch}
               />
-              <IconButton label="Open Port Map" onClick={openMap} className="ports-page__map-button">
+              {/* MVP: Open Port Map hidden - preserved, triggers onOpenMap={() => setPage('map')} */}
+              {/* <IconButton label="Open Port Map" onClick={openMap} className="ports-page__map-button">
                 <svg viewBox="0 0 16 16" aria-hidden="true">
                   <circle cx="3" cy="8" r="2" />
                   <circle cx="13" cy="4" r="2" />
                   <circle cx="13" cy="12" r="2" />
                   <path d="m4.8 7.1 6.4-2.3M4.8 8.9l6.4 2.3" />
                 </svg>
-              </IconButton>
+              </IconButton> */}
             </>
           )}
         />

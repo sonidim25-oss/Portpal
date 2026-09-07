@@ -20,37 +20,28 @@ async function openFixture(page: Page, width: number, height: number) {
 }
 
 test.describe("PortPal critical paths with deterministic Tauri data", () => {
-  test("desktop shell preserves ports, inspector, map, navigation, logs, and settings", async ({ page }) => {
+  test("desktop shell preserves ports, inspector, navigation, logs, and settings (MVP: Port Map hidden)", async ({ page }) => {
     await openFixture(page,1536,1024);
-    for (const name of ["Dashboard","Ports","Traffic","Services","Port Map","Logs","Settings"]) await expect(page.getByRole("navigation").getByRole("button",{name,exact:true})).toBeVisible();
+    for (const name of ["Dashboard","Ports","Traffic","Services","Logs","Settings"]) await expect(page.getByRole("navigation").getByRole("button",{name,exact:true})).toBeVisible();
+    // MVP: Port Map hidden - code preserved in src/features/port-map/
+    await expect(page.getByRole("navigation").getByRole("button",{name:"Port Map",exact:true})).not.toBeVisible();
     await page.getByRole("row").filter({hasText:"5173"}).click();
     await expect(page.getByRole("complementary",{name:"Port inspector for :5173"})).toBeVisible();
     await page.screenshot({path:`${scratch}/task-9-ports-1536.png`});
     await page.getByRole("button",{name:"Close inspector"}).click();
-    await page.getByRole("button",{name:"Open Port Map"}).click();
-    const firstNode=page.getByRole("button",{name:/PortPal, port 5173, node/i});
-    await expect(firstNode).toBeVisible(); await firstNode.click();
-    await expect(page.getByRole("complementary",{name:"Port inspector for :5173"})).toBeVisible();
-    await page.screenshot({path:`${scratch}/task-9-map-1536.png`});
-    const canvas=await page.locator(".port-map__canvas").boundingBox(), node=await firstNode.boundingBox();
-    expect(canvas&&node&&node.x>=canvas.x&&node.x+node.width<=canvas.x+canvas.width&&node.y>=canvas.y&&node.y+node.height<=canvas.y+canvas.height).toBeTruthy();
-    await page.getByRole("button",{name:"Fit map to view"}).click();
-    const zoom=Number((await page.getByLabel("Zoom percentage").textContent())?.replace("%","")); expect(zoom).toBeGreaterThanOrEqual(50); expect(zoom).toBeLessThanOrEqual(200);
-    await page.getByRole("button",{name:"Close Port Map"}).click();
+    // MVP: Port Map hidden - skip map steps
     await page.getByRole("button",{name:"Logs"}).click(); await page.getByRole("button",{name:"Refresh logs"}).click();
     await expect.poll(() => page.evaluate(() => (window as any).__PORTPAL_FIXTURE_CALLS__.filter((call:any)=>call.cmd==="get_port_events").length)).toBeGreaterThan(1);
     await page.getByRole("button",{name:"Settings"}).click(); await page.getByRole("button",{name:"Larger"}).click();
     await expect(page.locator("html")).toHaveCSS("--fs-scale","1.3");
   });
 
-  test("compact shell scrolls and keeps map pointer selection and inspector close operable", async ({ page }) => {
+  test("compact shell scrolls and keeps inspector close operable (MVP: no map)", async ({ page }) => {
     await openFixture(page,780,480);
     await expect(page.getByRole("navigation").getByRole("button",{name:"Ports",exact:true}).locator(".shell-sidebar__label")).toHaveCSS("position","absolute");
     const tablePane=page.locator(".ports-page__table-pane"); await expect(tablePane).toHaveCSS("overflow-x","auto");
     await page.getByRole("row").filter({hasText:"5173"}).click(); await page.screenshot({path:`${scratch}/task-9-ports-780.png`}); await page.getByRole("button",{name:"Close inspector"}).click();
-    await page.getByRole("button",{name:"Open Port Map"}).click();
-    const firstNode=page.getByRole("button",{name:/PortPal, port 5173, node/i}); await expect(firstNode).toBeVisible(); await firstNode.click();
-    await expect(page.getByRole("complementary",{name:"Port inspector for :5173"})).toBeVisible(); await page.screenshot({path:`${scratch}/task-9-map-780.png`}); await page.getByRole("button",{name:"Close inspector"}).click();
+    // MVP: Port Map hidden - skip map
     await page.getByRole("button",{name:"Traffic"}).click();
     expect((await page.locator(".secondary-summary-grid").boundingBox())?.height).toBeGreaterThan(45);
     expect(await page.locator(".secondary-scroll-list").evaluate((el)=>el.scrollHeight>=el.clientHeight)).toBeTruthy();

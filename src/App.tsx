@@ -5,7 +5,8 @@ import type { NavPage } from './app/types';
 import { AppShell } from './components/shell/AppShell';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { LogsPage } from './features/logs/LogsPage';
-import { PortMapPage } from './features/port-map/PortMapPage';
+// MVP: Port Map hidden - preserved in src/features/port-map/PortMapPage.tsx
+// import { PortMapPage } from './features/port-map/PortMapPage';
 import { PortsPage } from './features/ports/PortsPage';
 import { ServicesPage } from './features/services/ServicesPage';
 import { SettingsPage } from './features/settings/SettingsPage';
@@ -42,7 +43,8 @@ export default function App() {
         {page === 'dashboard' && <DashboardPage ports={ports} events={events} traffic={traffic} onNavigate={setPage} />}
         {page === 'ports' && <PortsPage ports={ports} traffic={traffic} observedAt={observedAt} killedPorts={killedPorts} killing={killing} restarting={restarting} loading={loading} error={errors.ports} onRetry={refreshPorts} onKill={killPort} onRestart={restartPort} onOpenMap={() => setPage('map')} />}
         {page === 'traffic' && <TrafficPage ports={ports} traffic={traffic} error={errors.traffic} onRetry={refreshTraffic} />}
-        {page === 'map' && <PortMapPage ports={ports} traffic={traffic} observedAt={observedAt} killedPorts={killedPorts} killing={killing} restarting={restarting} onKill={killPort} onRestart={restartPort} onClose={() => setPage('ports')} />}
+        {/* MVP: Port Map hidden - code preserved, route disabled */}
+        {/* {page === 'map' && <PortMapPage ports={ports} traffic={traffic} observedAt={observedAt} killedPorts={killedPorts} killing={killing} restarting={restarting} onKill={killPort} onRestart={restartPort} onClose={() => setPage('ports')} />} */}
         {page === 'services' && <ServicesPage ports={ports} traffic={traffic} />}
         {page === 'logs' && <LogsPage events={events} error={errors.events} onRefresh={refreshEvents} />}
         {page === 'settings' && <SettingsPage fontScale={fontScale} onFontScale={setFontScale} />}

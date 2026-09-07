@@ -95,21 +95,21 @@ describe('App integration - invoke + ports', () => {
     }));
   });
 
-  it('keeps all seven navigation destinations wired and closes the map back to Ports', async () => {
+  it('keeps six navigation destinations wired (MVP: Port Map hidden)', async () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
 
     for (const [navigation, heading] of [
       ['Dashboard', 'Dashboard'], ['Traffic', 'Traffic Monitor'], ['Services', 'Services'],
-      ['Logs', 'Event Logs'], ['Settings', 'Settings'], ['Ports', 'Ports'], ['Port Map', 'Port Map'],
+      ['Logs', 'Event Logs'], ['Settings', 'Settings'], ['Ports', 'Ports'],
+      // MVP: Port Map hidden - preserved in src/features/port-map/
     ] as const) {
       await user.click(screen.getByRole('button', { name: navigation }));
       expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
     }
-
-    await user.click(screen.getByRole('button', { name: 'Close Port Map' }));
-    expect(screen.getByRole('heading', { name: 'Ports' })).toBeInTheDocument();
+    // No Port Map navigation in MVP
+    expect(screen.queryByRole('button', { name: 'Port Map' })).not.toBeInTheDocument();
   });
 
   it('kills only the current filtered rows immediately with unchanged PID payloads', async () => {

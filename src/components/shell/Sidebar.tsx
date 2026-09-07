@@ -20,10 +20,12 @@ const navigationItems: NavigationItem[] = [
   { page: "ports", label: "Ports", icon: <PortsIcon /> },
   { page: "traffic", label: "Traffic", icon: <TrafficIcon /> },
   { page: "services", label: "Services", icon: <ServicesIcon /> },
-  { page: "map", label: "Port Map", icon: <MapIcon /> },
+  // MVP: Port Map hidden - code preserved in src/features/port-map/ (PortMapPage, PortTopology, etc.)
+  // { page: "map", label: "Port Map", icon: <MapIcon /> },
   { page: "logs", label: "Logs", icon: <LogsIcon /> },
   { page: "settings", label: "Settings", icon: <SettingsIcon /> },
 ];
+void MapIcon; // MVP: preserved
 
 export function Sidebar({ page, onNavigate, ports, lastScanAt }: SidebarProps) {
   return (

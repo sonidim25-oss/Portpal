@@ -90,7 +90,8 @@ describe("PortsPage", () => {
     expect(screen.getByRole("button", { name: "Other 1" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Filter" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Kill All" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Open Port Map" })).toBeVisible();
+    // MVP: Port Map hidden - preserved in src/features/port-map/
+    expect(screen.queryByRole("button", { name: "Open Port Map" })).not.toBeInTheDocument();
 
     for (const heading of ["PORT", "PROCESS", "PROJECT", "PID", "CONNECTIONS", "STARTED", "ACTIONS"]) {
       expect(screen.getByRole("columnheader", { name: heading })).toBeVisible();
@@ -265,15 +266,10 @@ describe("PortsPage", () => {
   });
 
   it("clears selection before opening Port Map", async () => {
-    const user = userEvent.setup();
+    // MVP: Port Map hidden - button not rendered, selection stays
     const { onOpenMap } = renderPorts();
-
-    await user.click(screen.getByRole("row", { name: /3000.*node.*Web App/i }));
-    expect(screen.getByRole("complementary")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Open Port Map" }));
-
-    expect(onOpenMap).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Port Map" })).not.toBeInTheDocument();
+    expect(onOpenMap).not.toHaveBeenCalled();
   });
 
   it("shows a loading state without claiming a port count", () => {
