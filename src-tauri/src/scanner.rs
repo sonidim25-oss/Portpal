@@ -13,6 +13,7 @@ pub struct PortInfo {
     pub project_path: Option<String>,
     pub project_name: Option<String>,
     pub protocol: String,
+    /// Display only: never parse or execute this joined command line.
     pub start_cmd: Option<String>,
 }
 
@@ -474,6 +475,7 @@ fn program_basename_allowed(program: &str) -> bool {
 /// immediately before spawning, so a stale store cannot outlive the filesystem.
 pub fn validate_launch_record(record: &LaunchRecord) -> Result<(), String> {
     reject_unsafe_token(&record.program, "program")?;
+    reject_shell_launcher(Path::new(&record.program))?;
     for arg in &record.args {
         reject_unsafe_token(arg, "argument")?;
     }
@@ -490,6 +492,7 @@ pub fn validate_launch_record(record: &LaunchRecord) -> Result<(), String> {
     if program.is_absolute() {
         let canonical = std::fs::canonicalize(program)
             .map_err(|e| format!("program does not resolve: {}", e))?;
+        reject_shell_launcher(&canonical)?;
         if is_unc(&canonical) {
             return Err("program resolves to a UNC path".into());
         }
@@ -507,6 +510,20 @@ pub fn validate_launch_record(record: &LaunchRecord) -> Result<(), String> {
         return Err(format!("program {:?} is not an allowed interpreter", record.program));
     }
 
+    Ok(())
+}
+
+/// Project-local programs must obey the same no-shell rule as global ones.
+/// Rust implicitly invokes cmd.exe for Windows batch files, even with args().
+fn reject_shell_launcher(program: &Path) -> Result<(), String> {
+    let name = program.file_name().and_then(|name| name.to_str())
+        .unwrap_or_default().to_ascii_lowercase();
+    let stem = name.strip_suffix(".exe").unwrap_or(&name);
+    if [".cmd", ".bat", ".ps1"].iter().any(|ext| name.ends_with(ext))
+        || ["cmd", "powershell", "pwsh", "sh", "bash", "dash", "zsh", "fish", "ksh", "csh", "tcsh"].contains(&stem)
+    {
+        return Err("shell launchers cannot be restarted; use the native server executable".into());
+    }
     Ok(())
 }
 
@@ -871,6 +888,55 @@ mod tests {
         fs::write(&binary, "").unwrap();
         let rec = record(&root, binary.to_str().unwrap(), &[]);
         assert!(validate_launch_record(&rec).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_shell_launchers_inside_the_project() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        for name in ["start.cmd", "start.BAT", "script.ps1", "cmd.exe", "powershell.exe", "pwsh.exe", "sh", "bash"] {
+            let binary = dir.path().join(name);
+            fs::write(&binary, "").unwrap();
+            let rec = record(&root, binary.to_str().unwrap(), &["ordinary argument"]);
+            assert!(validate_launch_record(&rec).is_err(), "accepted {name}");
+        }
+    }
+
+    #[test]
+    fn direct_spawn_preserves_argument_boundaries() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        let source = dir.path().join("probe.rs");
+        let binary = dir.path().join(format!("argument probe{}", std::env::consts::EXE_SUFFIX));
+        // A native child reports exactly what it received, without a shell or
+        // another language runtime interpreting its command line.
+        fs::write(&source, r#"
+            fn main() {
+                let args: Vec<String> = std::env::args().skip(1).collect();
+                std::fs::write("received.txt", format!("{:?}", args)).unwrap();
+            }
+        "#).unwrap();
+        assert!(Command::new("rustc").arg(&source).arg("-o").arg(&binary)
+            .status().unwrap().success());
+        let args = ["ordinary", "path with spaces", "trailing\\", "two  spaces"];
+        let cmd = std::iter::once(binary.to_str().unwrap().to_string())
+            .chain(args.iter().map(|arg| arg.to_string())).collect::<Vec<_>>();
+        let mut rec = build_launch_record(&cmd, Some(&root)).unwrap();
+        assert_eq!(rec.args, args);
+        // Exercise the spawn sink with punctuation as well: even if validation
+        // changes later, these must remain literal arguments, never shell code.
+        rec.args.extend(["& echo injected > injected.txt", "a|b", "a^b", "a\"b", "", "%PATH%"]
+            .iter().map(|arg| arg.to_string()));
+        spawn_trusted(&rec).unwrap();
+        let output = root.join("received.txt");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let expected = format!("{:?}", rec.args);
+        loop {
+            if fs::read_to_string(&output).ok().as_deref() == Some(&expected) { break; }
+            assert!(std::time::Instant::now() < deadline, "child did not report exact argv");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(!root.join("injected.txt").exists());
     }
 
     #[test]

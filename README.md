@@ -151,6 +151,14 @@ PortPal auto-detects these frameworks out-of-the-box:
 
 ## 🏗️ Architecture
 
+Restart uses backend-captured `program`, `args`, and working-directory values
+with direct process execution on Windows, macOS, and Linux. `start_cmd` is
+display-only; it must never be split or replayed through `cmd /C`, `cmd /K`, or
+`sh -c`. Arguments stay separate, including paths with spaces. Existing launch
+validation rejects shell metacharacters and unsafe paths; shell executables and
+batch/PowerShell launchers are refused even inside a project. Restart the native
+server executable instead of a shell wrapper.
+
 | Layer | Technology |
 |-------|-----------|
 | **Runtime** | [Tauri 2](https://tauri.app) — Rust backend, native webview |
