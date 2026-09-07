@@ -6,8 +6,8 @@ mod logger;
 use std::collections::HashMap;
 
 #[tauri::command]
-fn get_ports() -> Vec<scanner::PortInfo> {
-    scanner::scan_ports()
+fn get_ports() -> Result<Vec<scanner::PortInfo>, scanner::ScanError> {
+    scanner::try_scan_ports()
 }
 
 #[tauri::command]
@@ -24,13 +24,13 @@ fn restart_process(port: u16, pid: u32) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_port_graph() -> connections::PortGraph {
-    let ports = scanner::scan_ports();
+fn get_port_graph() -> Result<connections::PortGraph, scanner::ScanError> {
+    let ports = scanner::try_scan_ports()?;
     let listening: Vec<(u16, u32, String, Option<String>)> = ports
         .iter()
         .map(|p| (p.port, p.pid, p.process_name.clone(), p.project_name.clone()))
         .collect();
-    connections::get_port_graph(&listening)
+    Ok(connections::get_port_graph(&listening))
 }
 
 #[tauri::command]
@@ -59,6 +59,16 @@ pub fn run() {
             get_port_traffic
         ])
         .setup(|app| {
+            // Preflight: confirm the platform's port-listing tool actually
+            // works before the UI reports an empty list. A failure is logged
+            // and the app still starts — the scan error reaches the user
+            // through get_ports and the tray's scan-degraded event.
+            if let Err(e) = scanner::preflight() {
+                eprintln!(
+                    "PortPal preflight failed [{}]: {} (port scanning will be unavailable until `{}` works)",
+                    e.code, e.message, e.tool
+                );
+            }
             tray::setup_tray(app.handle())?;
             Ok(())
         })

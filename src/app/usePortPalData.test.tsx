@@ -24,12 +24,57 @@ function createGateway(overrides: Partial<PortPalGateway> = {}): PortPalGateway 
     restartProcess: vi.fn().mockResolvedValue(undefined),
     onPortsUpdated: vi.fn().mockResolvedValue(() => {}),
     onPortEvents: vi.fn().mockResolvedValue(() => {}),
+    onScanDegraded: vi.fn().mockResolvedValue(() => {}),
+    onScanRecovered: vi.fn().mockResolvedValue(() => {}),
     ...overrides,
   };
 }
 
 describe('usePortPalData', () => {
   afterEach(() => vi.useRealTimers());
+
+  it('reports a missing scan tool instead of an empty port list', async () => {
+    const gateway = createGateway({
+      getPorts: vi.fn().mockRejectedValue({ code: 'tool_missing', tool: 'lsof', message: '`lsof` was not found on PATH.' }),
+    });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.errors.ports).toContain('was not found on PATH');
+    expect(result.current.ports).toEqual([]);
+  });
+
+  it('marks already-listed ports stale when background scanning degrades', async () => {
+    // The rows on screen came from an earlier successful scan. Once scanning
+    // breaks they can no longer be trusted, so the page must say so rather
+    // than leave them looking live.
+    let degrade!: (error: { code: string; tool: string; message: string }) => void;
+    const gateway = createGateway({
+      onScanDegraded: vi.fn().mockImplementation(async (handler) => { degrade = handler; return () => {}; }),
+    });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.ports).toEqual([port]));
+    expect(result.current.errors.ports).toBeNull();
+
+    act(() => degrade({ code: 'tool_failed', tool: 'lsof', message: '`lsof` failed: permission denied' }));
+    expect(result.current.errors.ports).toContain('permission denied');
+  });
+
+  it('clears the degraded state and rescans once scanning recovers', async () => {
+    let degrade!: (error: { code: string; tool: string; message: string }) => void;
+    let recover!: () => void;
+    const gateway = createGateway({
+      onScanDegraded: vi.fn().mockImplementation(async (handler) => { degrade = handler; return () => {}; }),
+      onScanRecovered: vi.fn().mockImplementation(async (handler) => { recover = handler; return () => {}; }),
+    });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => degrade({ code: 'tool_missing', tool: 'lsof', message: 'gone' }));
+    expect(result.current.errors.ports).toBe('gone');
+
+    await act(async () => { recover(); });
+    await waitFor(() => expect(result.current.errors.ports).toBeNull());
+  });
 
   it('surfaces typed backend policy errors without removing the process', async () => {
     const gateway = createGateway({ killProcess: vi.fn().mockRejectedValue({ code: 'not_observed', message: 'PID is not a currently observed listening process' }) });

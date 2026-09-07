@@ -19,7 +19,76 @@ pub struct PortInfo {
 
 // ─── Entry point (platform router) ───────────────────────────────────────────
 
-pub fn scan_ports() -> Vec<PortInfo> {
+/// Why a scan could not be completed. Serialized to the webview so the UI can
+/// show a specific degraded state instead of an empty port list.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+pub struct ScanError {
+    /// `tool_missing` | `tool_failed` | `tool_unreadable`
+    pub code: &'static str,
+    /// The external tool the platform scanner depends on.
+    pub tool: &'static str,
+    pub message: String,
+}
+
+impl ScanError {
+    fn new(code: &'static str, tool: &'static str, message: impl Into<String>) -> Self {
+        Self { code, tool, message: message.into() }
+    }
+}
+
+impl std::fmt::Display for ScanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+/// Runs a port-listing tool and returns its stdout.
+///
+/// Every failure is reported as a typed error rather than a panic: a missing
+/// binary, a sandbox denial, and a non-zero exit are all recoverable states
+/// that must degrade to a visible warning, never terminate the app or the
+/// background tray thread.
+fn run_scan_tool(tool: &'static str, args: &[&str]) -> Result<String, ScanError> {
+    let output = Command::new(tool).args(args).output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            ScanError::new(
+                "tool_missing",
+                tool,
+                format!("`{tool}` was not found on PATH. PortPal needs it to list listening ports."),
+            )
+        } else {
+            ScanError::new(
+                "tool_failed",
+                tool,
+                format!("`{tool}` could not be started: {e}. It may be blocked by sandboxing or permissions."),
+            )
+        }
+    })?;
+
+    // A tool that ran but failed leaves stdout empty. Reporting that as "no
+    // ports are listening" would be a silent lie, so it is an error too.
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let detail = if detail.is_empty() { format!("exited with {}", output.status) } else { detail };
+        return Err(ScanError::new("tool_failed", tool, format!("`{tool}` failed: {detail}")));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Verifies at startup that this platform's scan tool is actually usable, so a
+/// missing dependency surfaces as a warning on launch instead of an empty port
+/// list minutes later. Never panics; the caller decides how to report it.
+pub fn preflight() -> Result<(), ScanError> {
+    try_scan_ports().map(|_| ())
+}
+
+/// Scans listening ports, or explains why it could not.
+///
+/// Callers must handle the error rather than substituting an empty list:
+/// `Ok(vec![])` means "nothing is listening", which is a very different claim
+/// from "the scan did not run", and the kill guards depend on the difference.
+pub fn try_scan_ports() -> Result<Vec<PortInfo>, ScanError> {
     let mut sys = System::new();
     sys.refresh_processes();
 
@@ -28,16 +97,18 @@ pub fn scan_ports() -> Vec<PortInfo> {
     let mut trusted: TrustedLaunches = HashMap::new();
 
     #[cfg(target_os = "windows")]
-    let ports = scan_windows(&sys, &mut trusted);
+    let ports = scan_windows(&sys, &mut trusted)?;
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    let ports = scan_unix(&sys, &mut trusted);
+    let ports = scan_unix(&sys, &mut trusted)?;
 
+    // Only replace the trusted store on a successful scan. A failed scan must
+    // not erase records that restart still depends on.
     if let Ok(mut store) = trusted_launches().lock() {
         *store = trusted;
     }
 
-    ports
+    Ok(ports)
 }
 
 #[derive(Debug, Serialize)]
@@ -84,7 +155,11 @@ pub fn kill_pid(pid: u32) -> Result<(), KillError> {
     // override is exposed through the PID-only webview command.
     let additional = std::env::var("PORTPAL_CRITICAL_PORTS").unwrap_or_default()
         .split(',').filter_map(|port| port.trim().parse::<u16>().ok()).collect::<Vec<_>>();
-    let ports = scan_ports();
+    // A scan that did not run cannot clear a kill: without a port list the
+    // critical-process guard has nothing to check against, so fail closed with
+    // the real reason instead of the misleading "not observed".
+    let ports = try_scan_ports()
+        .map_err(|e| KillError::new("scan_failed", format!("Cannot verify what PID {pid} is listening on: {e}")))?;
     validate_kill(pid, &ports, &additional)?;
     let mut sys = System::new();
     sys.refresh_processes();
@@ -104,13 +179,8 @@ pub fn kill_pid(pid: u32) -> Result<(), KillError> {
 // ─── Windows ─────────────────────────────────────────────────────────────────
 
 #[cfg(target_os = "windows")]
-fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Vec<PortInfo> {
-    let output = Command::new("netstat")
-        .args(["-ano"])
-        .output()
-        .expect("failed to run netstat");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo>, ScanError> {
+    let stdout = run_scan_tool("netstat", &["-ano"])?;
     let mut ports: Vec<PortInfo> = Vec::new();
     let mut seen_entries: HashSet<(u16, u32)> = HashSet::new();
 
@@ -178,7 +248,7 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Vec<PortInfo> {
     }
 
     ports.sort_by_key(|p| p.port);
-    ports
+    Ok(ports)
 }
 
 #[cfg(target_os = "windows")]
@@ -195,13 +265,8 @@ fn kill_windows(pid: u32) -> Result<(), String> {
 // ─── macOS + Linux (shared lsof path) ────────────────────────────────────────
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Vec<PortInfo> {
-    let output = Command::new("lsof")
-        .args(["-iTCP", "-sTCP:LISTEN", "-n", "-P"])
-        .output()
-        .expect("failed to run lsof — is it installed?");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo>, ScanError> {
+    let stdout = run_scan_tool("lsof", &["-iTCP", "-sTCP:LISTEN", "-n", "-P"])?;
     let mut ports: Vec<PortInfo> = Vec::new();
     let mut seen_entries: HashSet<(u16, u32)> = HashSet::new();
 
@@ -265,7 +330,7 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Vec<PortInfo> {
     }
 
     ports.sort_by_key(|p| p.port);
-    ports
+    Ok(ports)
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -563,9 +628,11 @@ fn spawn_trusted(record: &LaunchRecord) -> Result<(), String> {
     command.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// True when `pid` is still listening on `port`.
-fn port_is_listening(port: u16, pid: u32) -> bool {
-    scan_ports().iter().any(|p| p.port == port && p.pid == pid)
+/// True when `pid` is still listening on `port`. The scan error is propagated
+/// rather than collapsed into `false`, so a broken scan aborts the restart
+/// instead of looking like a process that already stopped.
+fn port_is_listening(port: u16, pid: u32) -> Result<bool, ScanError> {
+    Ok(try_scan_ports()?.iter().any(|p| p.port == port && p.pid == pid))
 }
 
 /// Restarts the process recorded for `(port, pid)` during the last scan.
@@ -599,7 +666,7 @@ pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
         if live != recorded {
             return Err(format!("pid {} no longer matches the recorded launch", pid));
         }
-        if !port_is_listening(port, pid) {
+        if !port_is_listening(port, pid).map_err(|e| e.message)? {
             return Err(format!("pid {} no longer listens on port {}", pid, port));
         }
         kill_pid(pid).map_err(|e| e.message)?;
@@ -641,6 +708,47 @@ mod tests {
     fn listener(pid: u32, port: u16, name: &str) -> PortInfo {
         PortInfo { pid, port, process_name: name.into(), project_path: None,
             project_name: None, protocol: "TCP".into(), start_cmd: None }
+    }
+
+    #[test]
+    fn missing_tool_is_a_typed_error_not_a_panic() {
+        // The historical bug: a missing binary panicked and took down the app
+        // and the tray thread. It must now be a recoverable, typed error.
+        let error = run_scan_tool("portpal-no-such-tool-exists", &[]).unwrap_err();
+        assert_eq!(error.code, "tool_missing");
+        assert_eq!(error.tool, "portpal-no-such-tool-exists");
+        assert!(error.message.contains("not found on PATH"), "{}", error.message);
+    }
+
+    #[test]
+    fn nonzero_exit_is_an_error_rather_than_an_empty_port_list() {
+        // A tool that runs but fails leaves stdout empty. Reporting that as
+        // "no ports are listening" would silently hide a broken scan.
+        #[cfg(target_os = "windows")]
+        let (tool, args): (&str, &[&str]) = ("cmd", &["/C", "exit 1"]);
+        #[cfg(not(target_os = "windows"))]
+        let (tool, args): (&str, &[&str]) = ("sh", &["-c", "exit 1"]);
+
+        let error = run_scan_tool(tool, args).unwrap_err();
+        assert_eq!(error.code, "tool_failed");
+    }
+
+    #[test]
+    fn successful_tool_returns_its_stdout() {
+        #[cfg(target_os = "windows")]
+        let (tool, args): (&str, &[&str]) = ("cmd", &["/C", "echo portpal"]);
+        #[cfg(not(target_os = "windows"))]
+        let (tool, args): (&str, &[&str]) = ("sh", &["-c", "echo portpal"]);
+
+        assert!(run_scan_tool(tool, args).unwrap().contains("portpal"));
+    }
+
+    #[test]
+    fn kill_is_refused_when_the_port_list_is_unavailable() {
+        // An empty list must never read as "this pid is harmless": the
+        // critical-process guard has nothing to check against, so the kill is
+        // refused rather than allowed through.
+        assert!(validate_kill(4242, &[], &[]).is_err());
     }
 
     #[test]
@@ -1032,3 +1140,4 @@ mod tests {
         assert_eq!(seen.len(), 3);
     }
 }
+

@@ -108,11 +108,36 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let debounce = Arc::new(Mutex::new(DebounceState::new()));
     let last_ports_json = Arc::new(Mutex::new(String::new()));
 
+    // Tracks whether the previous tick's scan failed, so a persistent outage
+    // is reported once rather than every two seconds forever.
+    let mut degraded = false;
+
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(Duration::from_secs(2));
 
-            let ports = scanner::scan_ports();
+            // A failed scan must not be flattened into an empty port list: that
+            // would emit ports-updated with [], clearing the UI's rows and its
+            // error banner, and would make the logger record every live port as
+            // stopped. Skip the tick instead and tell the frontend why.
+            let ports = match scanner::try_scan_ports() {
+                Ok(ports) => {
+                    if degraded {
+                        degraded = false;
+                        let _ = app_handle.emit("scan-recovered", ());
+                    }
+                    ports
+                }
+                Err(error) => {
+                    if !degraded {
+                        degraded = true;
+                        eprintln!("PortPal scan failed [{}]: {}", error.code, error.message);
+                        let _ = app_handle.emit("scan-degraded", &error);
+                    }
+                    continue;
+                }
+            };
+
             let new_state = compute_state(&ports);
             let port_count = ports.iter()
                 .filter(|p| [3000u16,3001,4000,4200,5173,5174,

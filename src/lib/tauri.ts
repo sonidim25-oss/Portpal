@@ -24,6 +24,14 @@ export interface PortGraph {
   edges: GraphEdgeData[];
 }
 
+/// Mirrors the Rust `ScanError`: why a port scan could not be completed.
+/// Distinct from an empty port list, which means nothing is listening.
+export interface ScanError {
+  code: 'tool_missing' | 'tool_failed' | (string & {});
+  tool: string;
+  message: string;
+}
+
 export interface PortPalGateway {
   getPorts(): Promise<PortInfo[]>;
   getPortEvents(): Promise<PortEvent[]>;
@@ -33,6 +41,8 @@ export interface PortPalGateway {
   restartProcess(port: number, pid: number): Promise<void>;
   onPortsUpdated(handler: (ports: PortInfo[]) => void): Promise<() => void>;
   onPortEvents(handler: (events: PortEvent[]) => void): Promise<() => void>;
+  onScanDegraded(handler: (error: ScanError) => void): Promise<() => void>;
+  onScanRecovered(handler: () => void): Promise<() => void>;
 }
 
 export const tauriPortPalGateway: PortPalGateway = {
@@ -47,4 +57,9 @@ export const tauriPortPalGateway: PortPalGateway = {
   restartProcess: (port, pid) => invoke<void>('restart_process', { port, pid }),
   onPortsUpdated: (handler) => listen<PortInfo[]>('ports-updated', (event) => handler(event.payload)),
   onPortEvents: (handler) => listen<PortEvent[]>('port-events', (event) => handler(event.payload)),
+  // The background scanner skips a tick it cannot complete rather than
+  // reporting an empty list, so these events are the only signal that the
+  // visible ports have gone stale.
+  onScanDegraded: (handler) => listen<ScanError>('scan-degraded', (event) => handler(event.payload)),
+  onScanRecovered: (handler) => listen<null>('scan-recovered', () => handler()),
 };

@@ -103,6 +103,8 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
     let active = true;
     let unlistenPorts: (() => void) | undefined;
     let unlistenEvents: (() => void) | undefined;
+    let unlistenDegraded: (() => void) | undefined;
+    let unlistenRecovered: (() => void) | undefined;
 
     void gateway.onPortsUpdated((updatedPorts) => {
       setPorts(updatedPorts);
@@ -135,12 +137,34 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
       else unlisten();
     });
 
+    // The scanner cannot report a failed scan as an empty list, so a break in
+    // scanning would otherwise leave the last successful rows on screen
+    // indefinitely. Surface it as a ports error: the rows are no longer
+    // trustworthy, and the page offers a retry.
+    void gateway.onScanDegraded((scanError) => {
+      setLoading(false);
+      setErrors((current) => ({ ...current, ports: scanError.message }));
+    }).then((unlisten) => {
+      if (active) unlistenDegraded = unlisten;
+      else unlisten();
+    });
+
+    void gateway.onScanRecovered(() => {
+      setErrors((current) => ({ ...current, ports: null }));
+      void refreshPorts();
+    }).then((unlisten) => {
+      if (active) unlistenRecovered = unlisten;
+      else unlisten();
+    });
+
     return () => {
       active = false;
       clearInterval(trafficTimer);
       if (toastTimer.current) clearTimeout(toastTimer.current);
       unlistenPorts?.();
       unlistenEvents?.();
+      unlistenDegraded?.();
+      unlistenRecovered?.();
     };
   }, [gateway, refreshEvents, refreshPorts, refreshTraffic]);
 

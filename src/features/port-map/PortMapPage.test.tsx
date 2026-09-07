@@ -20,6 +20,7 @@ function renderMap(overrides: Partial<PortMapPageProps> = {}) {
     getPortTraffic: vi.fn().mockResolvedValue({}), getPortGraph: vi.fn().mockResolvedValue(graph),
     killProcess: vi.fn().mockResolvedValue(undefined), restartProcess: vi.fn().mockResolvedValue(undefined),
     onPortsUpdated: vi.fn().mockResolvedValue(() => {}), onPortEvents: vi.fn().mockResolvedValue(() => {}),
+    onScanDegraded: vi.fn().mockResolvedValue(() => {}), onScanRecovered: vi.fn().mockResolvedValue(() => {}),
   };
   const props: PortMapPageProps = { ports, traffic: {}, observedAt: {}, killedPorts: new Map(), killing: new Set(), restarting: new Set(), onKill: vi.fn(), onRestart: vi.fn(), onClose: vi.fn(), gateway, ...overrides };
   return { ...render(<PortMapPage {...props} />), props, gateway };

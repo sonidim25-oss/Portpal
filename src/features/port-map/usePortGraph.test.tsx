@@ -11,6 +11,7 @@ function gateway(getPortGraph: PortPalGateway["getPortGraph"], onPortsUpdated: P
     getPortGraph, onPortsUpdated,
     getPorts: vi.fn().mockResolvedValue([]), getPortEvents: vi.fn().mockResolvedValue([]), getPortTraffic: vi.fn().mockResolvedValue({}),
     killProcess: vi.fn().mockResolvedValue(undefined), restartProcess: vi.fn().mockResolvedValue(undefined), onPortEvents: vi.fn().mockResolvedValue(() => {}),
+    onScanDegraded: vi.fn().mockResolvedValue(() => {}), onScanRecovered: vi.fn().mockResolvedValue(() => {}),
   };
 }
 
