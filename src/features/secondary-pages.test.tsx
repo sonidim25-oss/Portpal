@@ -1,0 +1,97 @@
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import type { PortEvent, PortInfo, TrafficByPort } from '../app/types';
+import { DashboardPage } from './dashboard/DashboardPage';
+import { LogsPage } from './logs/LogsPage';
+import { ServicesPage } from './services/ServicesPage';
+import { SettingsPage } from './settings/SettingsPage';
+import { TrafficPage } from './traffic/TrafficPage';
+
+const ports: PortInfo[] = [
+  { port: 3000, pid: 101, process_name: 'node', project_name: 'shop', project_path: '/shop', protocol: 'TCP', start_cmd: 'npm run dev' },
+  { port: 3001, pid: 102, process_name: 'node', project_name: 'shop', project_path: '/shop', protocol: 'TCP', start_cmd: 'npm run api' },
+  { port: 5432, pid: 103, process_name: 'postgres', project_name: null, project_path: null, protocol: 'TCP', start_cmd: null },
+];
+
+const traffic: TrafficByPort = {
+  3000: [{ connections: 2, timestamp: 1 }, { connections: 5, timestamp: 2 }],
+  3001: [{ connections: 3, timestamp: 1 }, { connections: 1, timestamp: 2 }],
+  5432: [{ connections: 4, timestamp: 1 }],
+};
+
+const events: PortEvent[] = [
+  { port: 3000, pid: 101, process_name: 'node', framework: 'React', event_type: 'started', timestamp: Date.now() },
+  { port: 5432, pid: 103, process_name: 'postgres', framework: null, event_type: 'stopped', timestamp: Date.now() - 1000 },
+];
+
+describe('secondary pages', () => {
+  it('preserves dashboard summaries and navigation actions', async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    render(<DashboardPage ports={ports} events={events} traffic={traffic} onNavigate={onNavigate} />);
+
+    expect(screen.getByText('Active Ports').previousElementSibling).toHaveTextContent('3');
+    expect(screen.getByText('Frameworks').previousElementSibling).toHaveTextContent('2');
+    expect(screen.getByText('Connections').previousElementSibling).toHaveTextContent('10');
+    expect(screen.getByText('Events Today').previousElementSibling).toHaveTextContent('2');
+
+    await user.click(screen.getByRole('button', { name: /Active Ports/ }));
+    await user.click(screen.getByRole('button', { name: /Connections/ }));
+    await user.click(screen.getAllByRole('button', { name: 'View all' })[1]);
+    expect(onNavigate.mock.calls).toEqual([['ports'], ['map'], ['logs']]);
+  });
+
+  it('preserves traffic totals, per-port metrics, and stale rows alongside retry', async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    render(<TrafficPage ports={ports} traffic={traffic} error="traffic unavailable" onRetry={onRetry} />);
+
+    expect(screen.getByText('Current Connections').previousElementSibling).toHaveTextContent('10');
+    expect(screen.getByText('Peak (Session)').previousElementSibling).toHaveTextContent('12');
+    const row = screen.getByRole('listitem', { name: /port 3000 traffic/i });
+    expect(within(row).getByText('current').parentElement).toHaveTextContent('5 current');
+    expect(within(row).getByText('peak').parentElement).toHaveTextContent('5 peak');
+    expect(within(row).getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('traffic unavailable')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry traffic' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves service grouping and aggregate connection counts', () => {
+    render(<ServicesPage ports={ports} traffic={traffic} />);
+
+    expect(screen.getByText('2 services running across 3 ports')).toBeInTheDocument();
+    const shop = screen.getByRole('article', { name: 'shop service' });
+    expect(within(shop).getByText('2 ports · 6 conns')).toBeInTheDocument();
+    expect(within(shop).getByText(':3000')).toBeInTheDocument();
+    expect(within(shop).getByText(':3001')).toBeInTheDocument();
+  });
+
+  it('preserves log event rows and refresh while retaining stale events on error', async () => {
+    const user = userEvent.setup();
+    const onRefresh = vi.fn();
+    render(<LogsPage events={events} error="events unavailable" onRefresh={onRefresh} />);
+
+    expect(screen.getByText('2 events recorded')).toBeInTheDocument();
+    expect(screen.getByText(':3000')).toBeInTheDocument();
+    expect(screen.getByText(':5432')).toBeInTheDocument();
+    expect(screen.getByText('events unavailable')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Refresh logs' }));
+    await user.click(screen.getByRole('button', { name: 'Retry logs' }));
+    expect(onRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves all settings font-scale controls', async () => {
+    const user = userEvent.setup();
+    const onFontScale = vi.fn();
+    render(<SettingsPage fontScale={1} onFontScale={onFontScale} />);
+
+    expect(screen.getByRole('button', { name: 'Standard' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Large' }));
+    await user.click(screen.getByRole('button', { name: 'Larger' }));
+    expect(onFontScale.mock.calls).toEqual([[1.15], [1.3]]);
+  });
+});

@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { DEV_PORTS, getServiceName, getStatus, timeAgo, filterPorts, type PortInfo } from './helpers';
+import {
+  DEV_PORTS,
+  classifyPort,
+  countPortsByCategory,
+  filterPorts,
+  getServiceName,
+  getStatus,
+  latestConnectionCount,
+  timeAgo,
+  uniqueProcessCount,
+} from './helpers';
+import type { PortInfo } from '../app/types';
 
 const basePort = (over: Partial<PortInfo> = {}): PortInfo => ({
   port: 3000,
@@ -90,14 +101,17 @@ describe('filterPorts', () => {
   it('all returns all when no search', () => {
     expect(filterPorts(ports, '', 'all')).toHaveLength(4);
   });
-  it('dev filter keeps only DEV_PORTS', () => {
+  it('dev filter keeps project and known developer ports', () => {
     const dev = filterPorts(ports, '', 'dev');
-    expect(dev.map((p) => p.port)).toEqual(expect.arrayContaining([3000, 5173, 5432]));
-    expect(dev).toHaveLength(3);
+    expect(dev.map((p) => p.port)).toEqual(expect.arrayContaining([3000, 5173]));
+    expect(dev).toHaveLength(2);
   });
-  it('other filter keeps non-DEV', () => {
-    const other = filterPorts(ports, '', 'other');
-    expect(other).toEqual([expect.objectContaining({ port: 49664 })]);
+  it('system filter keeps infrastructure ports', () => {
+    const system = filterPorts(ports, '', 'system');
+    expect(system.map((p) => p.port)).toEqual([49664, 5432]);
+  });
+  it('other filter excludes developer and system ports', () => {
+    expect(filterPorts(ports, '', 'other')).toEqual([]);
   });
   it('search by port substring', () => {
     expect(filterPorts(ports, '300', 'all')).toEqual([expect.objectContaining({ port: 3000 })]);
@@ -108,16 +122,66 @@ describe('filterPorts', () => {
   it('search by project_name', () => {
     expect(filterPorts(ports, 'my-react', 'all')).toEqual([expect.objectContaining({ port: 3000 })]);
   });
-  it('search by DEV label', () => {
-    expect(filterPorts(ports, 'react', 'all').map((p) => p.port)).toContain(3000);
-    expect(filterPorts(ports, 'vite', 'all').map((p) => p.port)).toContain(5173);
-  });
   it('trims and lowercases search', () => {
-    expect(filterPorts(ports, '  REACT  ', 'all')).toHaveLength(1);
+    expect(filterPorts(ports, '  my-react  ', 'all')).toHaveLength(1);
   });
-  it('dev + search combined', () => {
-    // search postgres in dev should return 5432, but postgres in other should not
-    expect(filterPorts(ports, 'postgres', 'dev').map((p) => p.port)).toEqual([5432]);
+  it('system + search combined', () => {
+    expect(filterPorts(ports, 'postgres', 'system').map((p) => p.port)).toEqual([5432]);
     expect(filterPorts(ports, 'postgres', 'other')).toHaveLength(0);
+  });
+});
+
+describe('port presentation selectors', () => {
+  const ports: PortInfo[] = [
+    basePort({ port: 3000, project_name: 'PortPal', project_path: 'C:\\work\\PortPal', start_cmd: 'npm run dev' }),
+    basePort({ port: 5173 }),
+    basePort({ port: 5432, process_name: 'postgres' }),
+    basePort({ port: 49664, process_name: 'lsass.exe' }),
+  ];
+
+  it('classifies project ports as dev and infrastructure as system', () => {
+    expect(classifyPort(basePort({ port: 5173, project_name: 'PortPal' }))).toBe('dev');
+    expect(classifyPort(basePort({ port: 5432, process_name: 'postgres' }))).toBe('system');
+    expect(classifyPort(basePort({ port: 49664, process_name: 'lsass.exe' }))).toBe('system');
+    expect(classifyPort(basePort({ port: 9229, process_name: 'node' }))).toBe('other');
+  });
+
+  it('searches project path, protocol, and start command', () => {
+    const port = basePort({
+      port: 5173,
+      project_path: 'C:\\work\\PortPal',
+      protocol: 'TCP',
+      start_cmd: 'npm run dev',
+    });
+    expect(filterPorts([port], 'portpal', 'all')).toEqual([port]);
+    expect(filterPorts([port], 'tcp', 'all')).toEqual([port]);
+    expect(filterPorts([port], 'npm run', 'all')).toEqual([port]);
+  });
+
+  it('counts all, dev, system, and other from the same classifier', () => {
+    expect(countPortsByCategory(ports)).toEqual({ all: 4, dev: 2, system: 2, other: 0 });
+  });
+
+  it('applies advanced protocol, project, restartability, and connection filters', () => {
+    const restartablePort = ports[0];
+    const connectedPort = ports[1];
+    const traffic = {
+      [connectedPort.port]: [{ connections: 3, timestamp: 2 }],
+      [restartablePort.port]: [{ connections: 0, timestamp: 1 }],
+    };
+
+    expect(filterPorts(ports, '', 'all', { protocol: 'TCP', project: 'with-project', restartableOnly: false, connectedOnly: false })).toEqual([restartablePort]);
+    expect(filterPorts(ports, '', 'all', { protocol: 'all', project: 'all', restartableOnly: true, connectedOnly: false })).toEqual([restartablePort]);
+    expect(filterPorts(ports, '', 'all', { protocol: 'all', project: 'all', restartableOnly: false, connectedOnly: true }, traffic)).toEqual([connectedPort]);
+  });
+
+  it('returns the most recent connection count and unique process count', () => {
+    expect(latestConnectionCount({ 3000: [{ connections: 1, timestamp: 1 }, { connections: 4, timestamp: 2 }] }, basePort())).toBe(4);
+    expect(latestConnectionCount({}, basePort())).toBe(0);
+    expect(uniqueProcessCount([
+      basePort({ pid: 1, process_name: 'node' }),
+      basePort({ pid: 2, process_name: 'node' }),
+      basePort({ pid: 3, process_name: 'python' }),
+    ])).toBe(2);
   });
 });

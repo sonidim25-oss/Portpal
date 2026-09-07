@@ -1,0 +1,125 @@
+.port-inspector {
+  display: flex;
+  flex: 0 0 320px;
+  flex-direction: column;
+  width: 320px;
+  min-height: 0;
+  background: var(--surface-primary);
+  border-left: 1px solid var(--border-default);
+  color: var(--text-primary);
+}
+
+.port-inspector__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.port-inspector__eyebrow,
+.port-inspector__subtitle,
+.port-inspector__section-title,
+.port-inspector__details {
+  margin: 0;
+}
+
+.port-inspector__eyebrow,
+.port-inspector__section-title {
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.port-inspector__title {
+  margin: 3px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-3xl);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.port-inspector__subtitle {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.port-inspector__close {
+  flex: 0 0 auto;
+}
+
+.port-inspector__close svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.5;
+}
+
+.port-inspector__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.port-inspector__section {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.port-inspector__section-title {
+  margin-bottom: 10px;
+}
+
+.port-inspector__details {
+  display: grid;
+  gap: 8px;
+}
+
+.port-inspector__detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr);
+  align-items: baseline;
+  gap: 12px;
+  font-size: var(--fs-sm);
+}
+
+.port-inspector__detail dt {
+  color: var(--text-muted);
+}
+
+.port-inspector__detail dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.port-inspector__value--mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.port-inspector__actions {
+  display: grid;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-default);
+}
+
+.port-inspector__action {
+  width: 100%;
+}
+
+.port-inspector__action--kill:hover:not(:disabled),
+.port-inspector__action--kill:focus-visible:not(:disabled) {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 13%, var(--surface-primary));
+}

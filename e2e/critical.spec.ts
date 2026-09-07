@@ -1,51 +1,58 @@
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from "@playwright/test";
+import { installTauriFixture, type TauriFixture } from "./fixtures/tauri";
 
-// Smoke for vite preview (no Tauri backend) - ensures critical navigation never 404
-// For full Tauri use `tauri-driver` + `cargo run` and webDriver session (see README)
+const scratch = ".superpowers/sdd/2026-09-02-portpal-monochrome-redesign";
 
-test.describe('PortPal critical paths (preview smoke)', () => {
-  test('loads PortPal and shows navigation', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.getByText('PortPal')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Dashboard' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Ports/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Traffic' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Services' })).toBeVisible();
-    await expect(page.getByRole('navigation').getByRole('button', { name: 'Port Map' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
+const ports = [[5173,101,"node","PortPal"],[3000,102,"node","Web App"],[4000,103,"python","API Server"],[5432,104,"postgres",null],[6379,105,"redis-server",null],[8080,106,"node","Dashboard"]].map(([port,pid,process_name,project_name]) => ({ port: port as number, pid: pid as number, process_name: process_name as string, project_name: project_name as string|null, project_path: project_name ? `C:/Projects/${project_name}` : null, protocol: "TCP", start_cmd: project_name ? "npm run dev" : null }));
+const nodes = ports.map((port) => ({ id:`port:${port.port}`, port:port.port, pid:port.pid, process_name:port.process_name, project_name:port.project_name, framework:port.project_name ? "Vite" : null, is_dev:Boolean(port.project_name), connection_count:3 }));
+const fixture: TauriFixture = {
+  ports,
+  events: ports.map((port,index) => ({ ...port, framework:index < 3 ? "Vite" : null, event_type:"started", timestamp:1_788_800_000_000-index*1000 })),
+  traffic: Object.fromEntries(ports.map((port,index) => [port.port,[{ connections:index+1,timestamp:1_788_800_000_000 }]])),
+  graph: { nodes, edges:nodes.slice(1).map((node) => ({ source:nodes[0].id,target:node.id,active:true })) },
+};
+
+async function openFixture(page: Page, width: number, height: number) {
+  await page.setViewportSize({ width, height });
+  await installTauriFixture(page, fixture);
+  await page.goto("/");
+  await expect(page.getByText("6 listening ports")).toBeVisible();
+}
+
+test.describe("PortPal critical paths with deterministic Tauri data", () => {
+  test("desktop shell preserves ports, inspector, map, navigation, logs, and settings", async ({ page }) => {
+    await openFixture(page,1536,1024);
+    for (const name of ["Dashboard","Ports","Traffic","Services","Port Map","Logs","Settings"]) await expect(page.getByRole("navigation").getByRole("button",{name,exact:true})).toBeVisible();
+    await page.getByRole("row").filter({hasText:"5173"}).click();
+    await expect(page.getByRole("complementary",{name:"Port inspector for :5173"})).toBeVisible();
+    await page.screenshot({path:`${scratch}/task-9-ports-1536.png`});
+    await page.getByRole("button",{name:"Close inspector"}).click();
+    await page.getByRole("button",{name:"Open Port Map"}).click();
+    const firstNode=page.getByRole("button",{name:/PortPal, port 5173, node/i});
+    await expect(firstNode).toBeVisible(); await firstNode.click();
+    await expect(page.getByRole("complementary",{name:"Port inspector for :5173"})).toBeVisible();
+    await page.screenshot({path:`${scratch}/task-9-map-1536.png`});
+    const canvas=await page.locator(".port-map__canvas").boundingBox(), node=await firstNode.boundingBox();
+    expect(canvas&&node&&node.x>=canvas.x&&node.x+node.width<=canvas.x+canvas.width&&node.y>=canvas.y&&node.y+node.height<=canvas.y+canvas.height).toBeTruthy();
+    await page.getByRole("button",{name:"Fit map to view"}).click();
+    const zoom=Number((await page.getByLabel("Zoom percentage").textContent())?.replace("%","")); expect(zoom).toBeGreaterThanOrEqual(50); expect(zoom).toBeLessThanOrEqual(200);
+    await page.getByRole("button",{name:"Close Port Map"}).click();
+    await page.getByRole("button",{name:"Logs"}).click(); await page.getByRole("button",{name:"Refresh logs"}).click();
+    await expect.poll(() => page.evaluate(() => (window as any).__PORTPAL_FIXTURE_CALLS__.filter((call:any)=>call.cmd==="get_port_events").length)).toBeGreaterThan(1);
+    await page.getByRole("button",{name:"Settings"}).click(); await page.getByRole("button",{name:"Larger"}).click();
+    await expect(page.locator("html")).toHaveCSS("--fs-scale","1.3");
   });
 
-  test('Ports page: search and filter tabs visible', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.getByPlaceholder(/Search ports or services/)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'All 0' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Dev' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Other' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Kill All (0)' })).toBeVisible();
-    await expect(page.getByText(/No ports in use|active connection/i).first()).toBeVisible();
-  });
-
-  test('Dashboard -> navigate to Ports via card', async ({ page }) => {
-    await page.goto('/');
-    await page.getByRole('button', { name: 'Dashboard' }).click();
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-    await expect(page.getByText('Overview of your port activity')).toBeVisible();
-    await expect(page.getByText('Active Ports')).toBeVisible();
-  });
-
-  test('Port Map and Services pages render', async ({ page }) => {
-    await page.goto('/');
-    await page.getByRole('navigation').getByRole('button', { name: 'Port Map' }).click();
-    await expect(page.locator('body')).toContainText(/Port Map|No ports/i);
-    await page.getByRole('button', { name: 'Services' }).click();
-    await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
-  });
-
-  test('Logs and Settings pages render', async ({ page }) => {
-    await page.goto('/');
-    await page.getByRole('button', { name: 'Logs' }).click();
-    await expect(page.getByText(/Event Logs/)).toBeVisible();
-    await page.getByRole('button', { name: 'Settings' }).click();
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  test("compact shell scrolls and keeps map pointer selection and inspector close operable", async ({ page }) => {
+    await openFixture(page,780,480);
+    await expect(page.getByRole("navigation").getByRole("button",{name:"Ports",exact:true}).locator(".shell-sidebar__label")).toHaveCSS("position","absolute");
+    const tablePane=page.locator(".ports-page__table-pane"); await expect(tablePane).toHaveCSS("overflow-x","auto");
+    await page.getByRole("row").filter({hasText:"5173"}).click(); await page.screenshot({path:`${scratch}/task-9-ports-780.png`}); await page.getByRole("button",{name:"Close inspector"}).click();
+    await page.getByRole("button",{name:"Open Port Map"}).click();
+    const firstNode=page.getByRole("button",{name:/PortPal, port 5173, node/i}); await expect(firstNode).toBeVisible(); await firstNode.click();
+    await expect(page.getByRole("complementary",{name:"Port inspector for :5173"})).toBeVisible(); await page.screenshot({path:`${scratch}/task-9-map-780.png`}); await page.getByRole("button",{name:"Close inspector"}).click();
+    await page.getByRole("button",{name:"Traffic"}).click();
+    expect((await page.locator(".secondary-summary-grid").boundingBox())?.height).toBeGreaterThan(45);
+    expect(await page.locator(".secondary-scroll-list").evaluate((el)=>el.scrollHeight>=el.clientHeight)).toBeTruthy();
   });
 });
