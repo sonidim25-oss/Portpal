@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { PortInfo, TrafficSample } from "../../app/types";
 import { Button, IconButton } from "../../components/ui/controls";
+import { PortInfoCard } from "../../port-intel";
 import { buildInspectorModel, type InspectorDetail } from "./portInspectorModel";
 import "./PortInspector.css";
 
@@ -93,6 +94,7 @@ export function PortInspector({
       </header>
 
       <div className="port-inspector__content">
+        <PortInfoCard port={port} headingLevel="h3" className="port-inspector__intel" />
         <InspectorSection title="Overview" rows={model.overview} />
         {projectRows.length > 0 && <InspectorSection title="Project" rows={projectRows} />}
         {processRows.length > 0 && <InspectorSection title="Process" rows={processRows} />}

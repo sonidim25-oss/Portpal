@@ -1,6 +1,7 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 import type { PortInfo, TrafficByPort } from "../../app/types";
 import { IconButton } from "../../components/ui/controls";
+import { PortBadge, PortTooltip } from "../../port-intel";
 import { latestConnectionCount, timeAgo } from "../../utils/helpers";
 
 export type PortSelection = { port: number; pid: number };
@@ -139,7 +140,9 @@ function PortRow({
       <td className="ports-table__port">
         <span className={killed ? "ports-table__dot ports-table__dot--stopped" : "ports-table__dot"} />
         <span className="ports-table__value-stack">
-          <span className="ports-table__mono ports-table__port-number">{port.port}</span>
+          <PortTooltip port={port}>
+            <span className="ports-table__mono ports-table__port-number">{port.port}</span>
+          </PortTooltip>
           <span className="ports-table__secondary ports-table__mono">{port.protocol}</span>
         </span>
         {killed
@@ -148,7 +151,10 @@ function PortRow({
       </td>
       <td>
         <span className="ports-table__value-stack">
-          <span>{port.process_name}</span>
+          <span className="ports-table__process-line">
+            <span className="ports-table__process-name">{port.process_name}</span>
+            <PortBadge port={port} className="ports-table__intel-badge" />
+          </span>
           {port.start_cmd && (
             <span className="ports-table__secondary ports-table__mono" title={port.start_cmd}>{port.start_cmd}</span>
           )}

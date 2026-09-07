@@ -35,3 +35,13 @@
   --transition-fast: 120ms;
   --transition-base: 150ms;
 }
+
+/* Port Intel surface remap. The module's other tokens (--text-primary,
+   --text-secondary, --font-mono, the --fs-* scale) already resolve above; only
+   these three surfaces were renamed by the redesign. Overriding here rather
+   than in port-intel.css keeps that module standalone for its own tests. */
+:root {
+  --pi-surface: var(--surface-hover);
+  --pi-surface-raised: var(--surface-selected);
+  --pi-border: var(--border-default);
+}

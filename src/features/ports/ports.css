@@ -375,3 +375,36 @@
   .ports-page__filter-controls .ui-segmented-control__option { padding-inline: 8px; }
 
 }
+
+/* --- Port Intel ------------------------------------------------------------
+   The port cell is a fixed-height `overflow: hidden` td, which would clip the
+   tooltip panel; the actions cell already sets the same escape hatch. The
+   panel also has to opt out of the table's inherited `white-space: nowrap`,
+   or the explanation card renders as one long line instead of wrapping. */
+
+.ports-table__port {
+  overflow: visible !important;
+}
+
+.ports-table__port .pi-tooltip__panel {
+  white-space: normal;
+}
+
+.ports-table__process-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.ports-table__process-name {
+  overflow: hidden;
+  flex: 0 1 auto;
+  text-overflow: ellipsis;
+}
+
+.ports-table__intel-badge {
+  min-width: 0;
+  flex: 0 1 auto;
+  font-size: var(--fs-2xs);
+}

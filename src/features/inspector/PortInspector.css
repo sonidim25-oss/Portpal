@@ -123,3 +123,11 @@
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 13%, var(--surface-primary));
 }
+
+/* Port Intel explanation card, sitting above the detail sections. It keeps its
+   own border and surface, so it takes the section padding as a margin instead
+   and drops the module's standalone 340px cap to fill the panel. */
+.port-inspector__intel {
+  max-width: none;
+  margin: 16px 20px;
+}
