@@ -28,6 +28,9 @@ function errorMessage(error: unknown): string {
 }
 
 function observedStarts(events: PortEvent[]): Record<number, number> {
+  // Keyed by port number: conflicting listeners on the same port share one
+  // observed-at timestamp. Conflict-safe because the timestamp describes the
+  // endpoint, while identity-sensitive logic (selection, keys) is pid-aware.
   return events.reduce<Record<number, number>>((observedAt, event) => {
     if (event.event_type === 'started') observedAt[event.port] = event.timestamp;
     return observedAt;
@@ -104,6 +107,10 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
       setLastScanAt(Date.now());
       setErrors((current) => ({ ...current, ports: null }));
       setKilledPorts((current) => {
+        // Keyed by port number: a STOPPED row describes the endpoint, not the
+        // PID. Clear it as soon as the port is live again (same or new PID);
+        // killPort already filters the live list by PID so conflicts keep
+        // their surviving rows.
         const livePorts = new Set(updatedPorts.map((port) => port.port));
         const next = new Map(current);
         for (const port of next.keys()) {
@@ -158,11 +165,13 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
     if (!port.start_cmd || !port.project_path) return;
     setRestarting((current) => new Set(current).add(port.pid));
     try {
-      await gateway.restartProcess(port.pid, port.start_cmd, port.project_path);
+      await gateway.restartProcess(port.port, port.pid);
       showToast(`Restarting ${port.project_name ?? port.process_name}…`);
       setKilledPorts((current) => {
         const next = new Map(current);
-        next.delete(port.port);
+        // Only clear our own STOPPED row: on a port conflict the entry may
+        // belong to a different PID than the one being restarted.
+        if (next.get(port.port)?.pid === port.pid) next.delete(port.port);
         return next;
       });
     } catch (error) {

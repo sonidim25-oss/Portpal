@@ -81,7 +81,7 @@ describe('App integration - invoke + ports', () => {
     expect(await screen.findByText(/Killed node on :3000/)).toBeInTheDocument();
   });
 
-  it('restart keeps the existing restart_process payload unchanged', async () => {
+  it('restart sends only the port and pid, never a command line or path', async () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
@@ -89,10 +89,19 @@ describe('App integration - invoke + ports', () => {
     await user.click(screen.getByRole('button', { name: 'Restart port 3000' }));
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('restart_process', {
+      port: 3000,
       pid: 1111,
-      cmd: 'npm run dev',
-      cwd: '/a/my-app',
     }));
+
+    // Regression guard for the command-injection fix: no restart_process call
+    // may ever carry an attacker-controllable cmd or cwd.
+    const restartArgs = vi.mocked(invoke).mock.calls
+      .filter(([cmd]) => cmd === 'restart_process')
+      .map(([, args]) => args as Record<string, unknown>);
+    expect(restartArgs.length).toBeGreaterThan(0);
+    for (const args of restartArgs) {
+      expect(Object.keys(args).sort()).toEqual(['pid', 'port']);
+    }
   });
 
   it('keeps six navigation destinations wired (MVP: Port Map hidden)', async () => {

@@ -1,6 +1,9 @@
+use once_cell::sync::Lazy;
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::collections::HashSet;
+use std::sync::Mutex;
 use sysinfo::System;
 
 #[derive(Serialize, Clone)]
@@ -20,11 +23,21 @@ pub fn scan_ports() -> Vec<PortInfo> {
     let mut sys = System::new();
     sys.refresh_processes();
 
+    // Rebuilt from scratch on every scan so stale (port, pid) pairs cannot be
+    // restarted after the owning process is gone or the pid has been reused.
+    let mut trusted: TrustedLaunches = HashMap::new();
+
     #[cfg(target_os = "windows")]
-    return scan_windows(&sys);
+    let ports = scan_windows(&sys, &mut trusted);
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    return scan_unix(&sys);
+    let ports = scan_unix(&sys, &mut trusted);
+
+    if let Ok(mut store) = trusted_launches().lock() {
+        *store = trusted;
+    }
+
+    ports
 }
 
 pub fn kill_pid(pid: u32) -> Result<(), String> {
@@ -38,7 +51,7 @@ pub fn kill_pid(pid: u32) -> Result<(), String> {
 // ─── Windows ─────────────────────────────────────────────────────────────────
 
 #[cfg(target_os = "windows")]
-fn scan_windows(sys: &System) -> Vec<PortInfo> {
+fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Vec<PortInfo> {
     let output = Command::new("netstat")
         .args(["-ano"])
         .output()
@@ -95,6 +108,10 @@ fn scan_windows(sys: &System) -> Vec<PortInfo> {
                     }
                 }
             }
+
+            if let Some(record) = build_launch_record(cmd_arr, process.cwd()) {
+                trusted.insert((port, pid), record);
+            }
         }
 
         let project_name = extract_project_name(&project_path);
@@ -125,7 +142,7 @@ fn kill_windows(pid: u32) -> Result<(), String> {
 // ─── macOS + Linux (shared lsof path) ────────────────────────────────────────
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn scan_unix(sys: &System) -> Vec<PortInfo> {
+fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Vec<PortInfo> {
     let output = Command::new("lsof")
         .args(["-iTCP", "-sTCP:LISTEN", "-n", "-P"])
         .output()
@@ -173,6 +190,10 @@ fn scan_unix(sys: &System) -> Vec<PortInfo> {
             let cmd = process.cmd().join(" ");
             if !cmd.trim().is_empty() {
                 start_cmd = Some(cmd);
+            }
+
+            if let Some(record) = build_launch_record(process.cmd(), process.cwd()) {
+                trusted.insert((port, pid), record);
             }
         }
 
@@ -260,6 +281,250 @@ fn extract_project_name(path: &Option<String>) -> Option<String> {
         .and_then(|p| std::path::Path::new(p).file_name())
         .and_then(|n| n.to_str())
         .map(|s| s.to_string())
+}
+
+// ─── Trusted restart ─────────────────────────────────────────────────────────
+//
+// The frontend may never hand the backend a command line or a working
+// directory: an attacker with script execution in the webview would otherwise
+// own the user's account. Instead every scan records vetted launch metadata for
+// the processes it observed, keyed by (port, pid), and `restart_trusted` is
+// only allowed to replay one of those records.
+
+/// Launch metadata captured from a live process during a scan. Never built
+/// from IPC input.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LaunchRecord {
+    /// argv[0] exactly as the OS reported it.
+    pub program: String,
+    /// argv[1..] exactly as the OS reported it.
+    pub args: Vec<String>,
+    /// Canonical working directory, always inside `root`.
+    pub cwd: PathBuf,
+    /// Canonical project root that jails `cwd` (and absolute programs).
+    pub root: PathBuf,
+}
+
+type TrustedLaunches = HashMap<(u16, u32), LaunchRecord>;
+
+fn trusted_launches() -> &'static Mutex<TrustedLaunches> {
+    static TRUSTED: Lazy<Mutex<TrustedLaunches>> = Lazy::new(|| Mutex::new(HashMap::new()));
+    &TRUSTED
+}
+
+/// Interpreters a dev server is allowed to be relaunched through when the
+/// program lives outside the project root (e.g. a global node install).
+const ALLOWED_PROGRAMS: &[&str] = &[
+    "node", "npm", "npx", "pnpm", "yarn", "bun", "deno", "cargo", "python", "python3", "go",
+];
+
+/// Anything a shell could interpret. We never invoke a shell, but rejecting
+/// these keeps the door shut if a future caller ever does.
+const FORBIDDEN_CHARS: &[char] = &[
+    '&', '|', ';', '$', '`', '(', ')', '<', '>', '"', '\'', '*', '?', '~', '#', '%', '!', '{',
+    '}', '[', ']', '^', '\n', '\r', '\t',
+];
+
+/// Rejects a token that a shell (or a path walker) could reinterpret.
+pub fn reject_unsafe_token(token: &str, kind: &str) -> Result<(), String> {
+    if token.is_empty() {
+        return Err(format!("empty {}", kind));
+    }
+    if let Some(bad) = token.chars().find(|c| FORBIDDEN_CHARS.contains(c) || c.is_control()) {
+        return Err(format!("{} contains an unsafe character {:?}", kind, bad));
+    }
+    if token.split(['/', '\\']).any(|part| part == "..") {
+        return Err(format!("{} contains a parent-directory traversal", kind));
+    }
+    Ok(())
+}
+
+/// True for `\\server\share` style paths, which escape any local jail.
+fn is_unc(path: &Path) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use std::path::{Component, Prefix};
+        if let Some(Component::Prefix(prefix)) = path.components().next() {
+            return matches!(prefix.kind(), Prefix::UNC(..) | Prefix::VerbatimUNC(..));
+        }
+        false
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        path.to_string_lossy().starts_with("\\\\")
+    }
+}
+
+/// Canonicalizes `dir` and asserts it resolves to an existing directory under
+/// `root`. Rejects traversal, UNC, `~`, and unexpanded environment variables.
+fn canonicalize_jailed(dir: &Path, root: &Path) -> Result<PathBuf, String> {
+    let raw = dir.to_string_lossy();
+    if raw.is_empty() {
+        return Err("working directory is empty".into());
+    }
+    if raw.contains('~') || raw.contains('%') || raw.contains('$') || raw.contains('\0') {
+        return Err("working directory contains an unexpanded or unsafe token".into());
+    }
+    // Note: `is_unc` inspects the path prefix, so Windows verbatim disk paths
+    // (`\\?\C:\…`, what `canonicalize` returns) are not mistaken for UNC.
+    if is_unc(dir) {
+        return Err("working directory is a UNC path".into());
+    }
+    if dir
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("working directory contains a parent-directory traversal".into());
+    }
+
+    let canonical = std::fs::canonicalize(dir)
+        .map_err(|e| format!("working directory does not resolve: {}", e))?;
+    if !canonical.is_dir() {
+        return Err("working directory is not a directory".into());
+    }
+    if is_unc(&canonical) {
+        return Err("working directory resolves to a UNC path".into());
+    }
+    if !canonical.starts_with(root) {
+        return Err("working directory escapes the project root".into());
+    }
+    Ok(canonical)
+}
+
+/// Matches `program`'s file name against [`ALLOWED_PROGRAMS`], refusing any
+/// executable extension that Windows would run through a shell (`.bat`/`.cmd`).
+fn program_basename_allowed(program: &str) -> bool {
+    let Some(name) = Path::new(program).file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let lower = name.to_ascii_lowercase();
+    let stem = lower.strip_suffix(".exe").unwrap_or(&lower);
+    if stem.contains('.') {
+        return false; // .bat, .cmd, .ps1, … are shell-interpreted launchers
+    }
+    ALLOWED_PROGRAMS.contains(&stem)
+}
+
+/// Full re-validation of a record. Run when the record is built *and* again
+/// immediately before spawning, so a stale store cannot outlive the filesystem.
+pub fn validate_launch_record(record: &LaunchRecord) -> Result<(), String> {
+    reject_unsafe_token(&record.program, "program")?;
+    for arg in &record.args {
+        reject_unsafe_token(arg, "argument")?;
+    }
+
+    if !record.root.is_absolute() || is_unc(&record.root) {
+        return Err("project root is not a local absolute path".into());
+    }
+    if !record.cwd.starts_with(&record.root) {
+        return Err("working directory escapes the project root".into());
+    }
+    canonicalize_jailed(&record.cwd, &record.root)?;
+
+    let program = Path::new(&record.program);
+    if program.is_absolute() {
+        let canonical = std::fs::canonicalize(program)
+            .map_err(|e| format!("program does not resolve: {}", e))?;
+        if is_unc(&canonical) {
+            return Err("program resolves to a UNC path".into());
+        }
+        // An absolute program is allowed either because it is a known
+        // interpreter, or because it lives inside the jail.
+        if !program_basename_allowed(&record.program) && !canonical.starts_with(&record.root) {
+            return Err(format!(
+                "program {:?} is neither an allowed interpreter nor inside the project root",
+                record.program
+            ));
+        }
+    } else if Path::new(&record.program).components().count() != 1 {
+        return Err("relative program paths are not allowed".into());
+    } else if !program_basename_allowed(&record.program) {
+        return Err(format!("program {:?} is not an allowed interpreter", record.program));
+    }
+
+    Ok(())
+}
+
+/// Builds a vetted record from what the OS reported about a live process.
+/// Returns `None` (restart simply stays unavailable) whenever anything about
+/// the process fails validation — the fail-closed path.
+fn build_launch_record(cmd: &[String], cwd: Option<&Path>) -> Option<LaunchRecord> {
+    let program = cmd.first()?.trim().to_string();
+    if program.is_empty() {
+        return None;
+    }
+    let args: Vec<String> = cmd.iter().skip(1).map(|a| a.to_string()).collect();
+
+    let cwd = cwd?;
+    let root = std::fs::canonicalize(find_project_root(cwd)?).ok()?;
+    let cwd = canonicalize_jailed(cwd, &root).ok()?;
+
+    let record = LaunchRecord { program, args, cwd, root };
+    validate_launch_record(&record).ok()?;
+    Some(record)
+}
+
+/// Spawns a vetted record directly — no `cmd /C`, no `sh -c`, no string
+/// splitting. On Windows the child gets its own console so a dev server stays
+/// visible, without routing through a command interpreter.
+fn spawn_trusted(record: &LaunchRecord) -> Result<(), String> {
+    let mut command = Command::new(&record.program);
+    command.args(&record.args).current_dir(&record.cwd);
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        command.creation_flags(CREATE_NEW_CONSOLE);
+    }
+
+    command.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// True when `pid` is still listening on `port`.
+fn port_is_listening(port: u16, pid: u32) -> bool {
+    scan_ports().iter().any(|p| p.port == port && p.pid == pid)
+}
+
+/// Restarts the process recorded for `(port, pid)` during the last scan.
+///
+/// The only inputs from the frontend are the port and the pid; everything that
+/// reaches the OS comes from the trusted store. Shared by `lib.rs` and
+/// `main.rs` so both entry points behave identically.
+pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
+    let record = trusted_launches()
+        .lock()
+        .map_err(|_| "trusted launch store is poisoned".to_string())?
+        .get(&(port, pid))
+        .cloned()
+        .ok_or_else(|| {
+            format!("no trusted launch record for port {} (pid {}); rescan and try again", port, pid)
+        })?;
+
+    // The store may have been recorded seconds or hours ago; re-check it
+    // against the filesystem before anything is executed.
+    validate_launch_record(&record)?;
+
+    // If the process is still alive it must be the same process we recorded —
+    // otherwise the pid was reused and killing it would hit a bystander.
+    let mut sys = System::new();
+    sys.refresh_processes();
+    if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
+        let live: Vec<String> = process.cmd().to_vec();
+        let recorded: Vec<String> = std::iter::once(record.program.clone())
+            .chain(record.args.iter().cloned())
+            .collect();
+        if live != recorded {
+            return Err(format!("pid {} no longer matches the recorded launch", pid));
+        }
+        if !port_is_listening(port, pid) {
+            return Err(format!("pid {} no longer listens on port {}", pid, port));
+        }
+        kill_pid(pid)?;
+        std::thread::sleep(std::time::Duration::from_millis(800));
+    }
+
+    spawn_trusted(&record)
 }
 
 // ─── Test helpers (pure, no OS calls) ───────────────────────────────────────
@@ -388,6 +653,215 @@ mod tests {
     fn parse_lsof_too_short() {
         let parts: Vec<&str> = "a b c".split_whitespace().collect();
         assert_eq!(parse_lsof_name_parts(&parts), None);
+    }
+
+    // ─── Trusted restart ─────────────────────────────────────────────────
+
+    fn project(dir: &tempfile::TempDir) -> PathBuf {
+        fs::write(dir.path().join("package.json"), "{}").unwrap();
+        fs::canonicalize(dir.path()).unwrap()
+    }
+
+    fn record(root: &Path, program: &str, args: &[&str]) -> LaunchRecord {
+        LaunchRecord {
+            program: program.to_string(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+            cwd: root.to_path_buf(),
+            root: root.to_path_buf(),
+        }
+    }
+
+    #[test]
+    fn reject_unsafe_token_blocks_shell_metacharacters() {
+        for token in [
+            "npm && calc.exe",
+            "npm; rm -rf /",
+            "npm | nc attacker 1",
+            "$(whoami)",
+            "`whoami`",
+            "run > out.txt",
+            "run < in.txt",
+            "%APPDATA%",
+            "~/evil",
+            "dev*",
+            "dev?",
+            "a\nb",
+            "a\"b",
+            "a'b",
+            "^cmd",
+            "!DELAYED!",
+            "{a,b}",
+            "[a]",
+            "#comment",
+        ] {
+            assert!(
+                reject_unsafe_token(token, "argument").is_err(),
+                "expected {:?} to be rejected",
+                token
+            );
+        }
+    }
+
+    #[test]
+    fn reject_unsafe_token_blocks_traversal_and_empty() {
+        assert!(reject_unsafe_token("", "argument").is_err());
+        assert!(reject_unsafe_token("../../etc/passwd", "argument").is_err());
+        assert!(reject_unsafe_token("..\\..\\windows", "argument").is_err());
+        assert!(reject_unsafe_token("a\0b", "argument").is_err());
+    }
+
+    #[test]
+    fn reject_unsafe_token_allows_ordinary_arguments() {
+        for token in ["run", "dev", "--port=5173", "src/index.js", "C:\\bin\\node.exe", "-m"] {
+            assert!(reject_unsafe_token(token, "argument").is_ok(), "{:?}", token);
+        }
+    }
+
+    #[test]
+    fn program_basename_allowlist() {
+        assert!(program_basename_allowed("npm"));
+        assert!(program_basename_allowed("node"));
+        assert!(program_basename_allowed("C:\\Program Files\\nodejs\\node.exe"));
+        assert!(program_basename_allowed("/usr/local/bin/python3"));
+        // Shell-interpreted launchers and anything off the list stay out.
+        assert!(!program_basename_allowed("npm.cmd"));
+        assert!(!program_basename_allowed("evil.bat"));
+        assert!(!program_basename_allowed("payload.ps1"));
+        assert!(!program_basename_allowed("cmd"));
+        assert!(!program_basename_allowed("sh"));
+        assert!(!program_basename_allowed("powershell.exe"));
+    }
+
+    #[test]
+    fn validate_accepts_an_allowlisted_interpreter_inside_the_jail() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        assert!(validate_launch_record(&record(&root, "npm", &["run", "dev"])).is_ok());
+    }
+
+    #[test]
+    fn validate_accepts_a_subdirectory_cwd() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        let sub = root.join("apps/web");
+        fs::create_dir_all(&sub).unwrap();
+        let mut rec = record(&root, "npm", &["run", "dev"]);
+        rec.cwd = fs::canonicalize(&sub).unwrap();
+        assert!(validate_launch_record(&rec).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_metacharacters_in_program_and_args() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        assert!(validate_launch_record(&record(&root, "npm & calc", &[])).is_err());
+        assert!(validate_launch_record(&record(&root, "npm", &["run", "dev && calc"])).is_err());
+        assert!(validate_launch_record(&record(&root, "npm", &["$(id)"])).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_programs_that_are_not_allowlisted_or_jailed() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        assert!(validate_launch_record(&record(&root, "calc", &[])).is_err());
+        assert!(validate_launch_record(&record(&root, "sh", &["-c", "id"])).is_err());
+        // Relative paths never resolve against a predictable directory.
+        assert!(validate_launch_record(&record(&root, "./evil", &[])).is_err());
+        assert!(validate_launch_record(&record(&root, "sub/evil", &[])).is_err());
+    }
+
+    #[test]
+    fn validate_accepts_an_absolute_program_inside_the_jail() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        // Use the non-verbatim path the OS would actually report for argv[0].
+        let binary = dir.path().join("server");
+        fs::write(&binary, "").unwrap();
+        let rec = record(&root, binary.to_str().unwrap(), &[]);
+        assert!(validate_launch_record(&rec).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_an_absolute_program_outside_the_jail() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        let outside = tempdir().unwrap();
+        let binary = outside.path().join("evil");
+        fs::write(&binary, "").unwrap();
+        let rec = record(&root, binary.to_str().unwrap(), &[]);
+        assert!(validate_launch_record(&rec).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_a_cwd_outside_the_jail() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        let outside = tempdir().unwrap();
+        let mut rec = record(&root, "npm", &["run", "dev"]);
+        rec.cwd = fs::canonicalize(outside.path()).unwrap();
+        assert!(validate_launch_record(&rec).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_a_nonexistent_cwd() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        let mut rec = record(&root, "npm", &["run", "dev"]);
+        rec.cwd = root.join("does-not-exist");
+        assert!(validate_launch_record(&rec).is_err());
+    }
+
+    #[test]
+    fn canonicalize_jailed_rejects_traversal_unc_and_expansions() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        let sub = root.join("app");
+        fs::create_dir_all(&sub).unwrap();
+
+        assert!(canonicalize_jailed(&sub, &root).is_ok());
+        assert!(canonicalize_jailed(&sub.join("../.."), &root).is_err());
+        assert!(canonicalize_jailed(Path::new("\\\\evil\\share"), &root).is_err());
+        assert!(canonicalize_jailed(Path::new("~/projects"), &root).is_err());
+        assert!(canonicalize_jailed(Path::new("%APPDATA%"), &root).is_err());
+        assert!(canonicalize_jailed(Path::new("$HOME/x"), &root).is_err());
+        assert!(canonicalize_jailed(Path::new(""), &root).is_err());
+    }
+
+    #[test]
+    fn build_launch_record_captures_a_vetted_dev_server() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        let cmd: Vec<String> = ["npm", "run", "dev"].iter().map(|s| s.to_string()).collect();
+        let rec = build_launch_record(&cmd, Some(&root)).expect("record");
+        assert_eq!(rec.program, "npm");
+        assert_eq!(rec.args, vec!["run".to_string(), "dev".to_string()]);
+        assert_eq!(rec.cwd, root);
+        assert_eq!(rec.root, root);
+    }
+
+    #[test]
+    fn build_launch_record_fails_closed() {
+        let dir = tempdir().unwrap();
+        let root = project(&dir);
+        // No project marker within the 6 levels above the cwd -> no jail -> no record.
+        let bare = tempdir().unwrap();
+        let unmarked = bare.path().join("a/b/c/d/e/f/g");
+        fs::create_dir_all(&unmarked).unwrap();
+        let cmd: Vec<String> = ["npm".to_string(), "run".to_string()].to_vec();
+        assert!(build_launch_record(&cmd, Some(&unmarked)).is_none());
+        // No cwd at all.
+        assert!(build_launch_record(&cmd, None).is_none());
+        // Empty argv.
+        assert!(build_launch_record(&[], Some(&root)).is_none());
+        // Disallowed program.
+        let evil: Vec<String> = ["cmd".to_string(), "/C".to_string()].to_vec();
+        assert!(build_launch_record(&evil, Some(&root)).is_none());
+    }
+
+    #[test]
+    fn restart_trusted_refuses_an_unknown_port_and_pid() {
+        let err = restart_trusted(65535, 4_294_967_290).unwrap_err();
+        assert!(err.contains("no trusted launch record"), "{}", err);
     }
 
     #[test]

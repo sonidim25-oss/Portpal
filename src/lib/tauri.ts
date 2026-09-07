@@ -30,7 +30,7 @@ export interface PortPalGateway {
   getPortTraffic(): Promise<TrafficByPort>;
   getPortGraph(): Promise<PortGraph>;
   killProcess(pid: number): Promise<void>;
-  restartProcess(pid: number, cmd: string, cwd: string): Promise<void>;
+  restartProcess(port: number, pid: number): Promise<void>;
   onPortsUpdated(handler: (ports: PortInfo[]) => void): Promise<() => void>;
   onPortEvents(handler: (events: PortEvent[]) => void): Promise<() => void>;
 }
@@ -41,7 +41,10 @@ export const tauriPortPalGateway: PortPalGateway = {
   getPortTraffic: () => invoke<TrafficByPort>('get_port_traffic'),
   getPortGraph: () => invoke<PortGraph>('get_port_graph'),
   killProcess: (pid) => invoke<void>('kill_process', { pid }),
-  restartProcess: (pid, cmd, cwd) => invoke<void>('restart_process', { pid, cmd, cwd }),
+  // Only the port and pid cross the IPC boundary. The command line and working
+  // directory come from the backend's trusted store, so script running in this
+  // webview cannot ask the host to execute anything of its choosing.
+  restartProcess: (port, pid) => invoke<void>('restart_process', { port, pid }),
   onPortsUpdated: (handler) => listen<PortInfo[]>('ports-updated', (event) => handler(event.payload)),
   onPortEvents: (handler) => listen<PortEvent[]>('port-events', (event) => handler(event.payload)),
 };

@@ -99,14 +99,27 @@ describe('usePortPalData', () => {
     expect(result.current.killedPorts.has(3001)).toBe(false);
   });
 
-  it('restarts with the port command and path unchanged', async () => {
+  it('restarts by port and pid only, never forwarding a command or path', async () => {
     const gateway = createGateway();
     const { result } = renderHook(() => usePortPalData(gateway));
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => result.current.restartPort(port));
 
-    expect(gateway.restartProcess).toHaveBeenCalledWith(1234, 'npm run dev', 'C:/work/portpal');
+    expect(gateway.restartProcess).toHaveBeenCalledWith(5173, 1234);
+    // The command line and project path stay behind the IPC boundary.
+    expect(vi.mocked(gateway.restartProcess).mock.calls[0]).toHaveLength(2);
+    expect(JSON.stringify(vi.mocked(gateway.restartProcess).mock.calls)).not.toContain('npm run dev');
+  });
+
+  it('does not restart a port with no recorded command or path', async () => {
+    const gateway = createGateway();
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => result.current.restartPort({ ...port, start_cmd: null, project_path: null }));
+
+    expect(gateway.restartProcess).not.toHaveBeenCalled();
   });
 
   it('exposes independent errors without setting a successful scan time for a failed port load', async () => {

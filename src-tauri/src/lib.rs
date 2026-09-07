@@ -24,30 +24,12 @@ fn kill_process(pid: u32) -> Result<(), String> {
     scanner::kill_pid(pid)
 }
 
+/// Restarts a scanned process. Takes only a port and a pid: the command line
+/// and working directory come from the backend's trusted store, never from the
+/// webview.
 #[tauri::command]
-fn restart_process(pid: u32, cmd: String, cwd: String) -> Result<(), String> {
-    scanner::kill_pid(pid)?;
-    std::thread::sleep(std::time::Duration::from_millis(800));
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "cmd", "/K", &cmd])
-            .current_dir(&cwd)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    {
-        let mut parts = cmd.split_whitespace();
-        let program = parts.next().ok_or("empty command")?;
-        let args: Vec<&str> = parts.collect();
-        std::process::Command::new(program)
-            .args(&args)
-            .current_dir(&cwd)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+fn restart_process(port: u16, pid: u32) -> Result<(), String> {
+    scanner::restart_trusted(port, pid)
 }
 
 #[tauri::command]
