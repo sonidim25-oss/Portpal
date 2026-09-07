@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import "./App.css";
-import PortMap from "./PortMap";
+import { PortMapPage } from "./features/port-map/PortMapPage";
 import { AppShell } from "./components/shell/AppShell";
 import type { NavPage, PortEvent, PortInfo, TrafficByPort } from "./app/types";
 import { usePortPalData } from "./app/usePortPalData";
@@ -129,7 +129,17 @@ export default function App() {
           {page === "traffic" && <TrafficPage ports={ports} traffic={traffic} />}
 
           {/* ════════ PORT MAP ════════ */}
-          {page === "map" && <PortMap onClose={() => setPage("ports")} />}
+          {page === "map" && <PortMapPage
+            ports={ports}
+            traffic={traffic}
+            observedAt={observedAt}
+            killedPorts={killedPorts}
+            killing={killing}
+            restarting={restarting}
+            onKill={killPort}
+            onRestart={restartPort}
+            onClose={() => setPage("ports")}
+          />}
 
           {/* ════════ SERVICES ════════ */}
           {page === "services" && <ServicesPage ports={ports} traffic={traffic} />}
