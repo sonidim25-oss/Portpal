@@ -6,6 +6,9 @@ vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
     minimize: vi.fn(),
     toggleMaximize: vi.fn(),
+    maximize: vi.fn(),
+    unmaximize: vi.fn(),
+    isMaximized: vi.fn(() => Promise.resolve(false)),
     close: vi.fn(),
     hide: vi.fn(),
     show: vi.fn(),
