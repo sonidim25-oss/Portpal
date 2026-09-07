@@ -39,12 +39,65 @@ pub fn scan_ports() -> Vec<PortInfo> {
     ports
 }
 
-pub fn kill_pid(pid: u32) -> Result<(), String> {
+#[derive(Debug, Serialize)]
+pub struct KillError {
+    pub code: &'static str,
+    pub message: String,
+}
+
+impl KillError {
+    fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self { code, message: message.into() }
+    }
+}
+
+const CRITICAL_PORTS: &[u16] = &[22, 80, 443, 3306, 5432, 6379, 27017];
+
+fn validate_kill(pid: u32, ports: &[PortInfo], additional_critical_ports: &[u16]) -> Result<(), KillError> {
+    if pid <= 1 || pid > i32::MAX as u32 {
+        return Err(KillError::new("invalid_pid", "Reserved or invalid process ID"));
+    }
+    let listeners: Vec<_> = ports.iter().filter(|p| p.pid == pid).collect();
+    if listeners.is_empty() {
+        return Err(KillError::new("not_observed", format!("PID {pid} is not a currently observed listening process; rescan and try again")));
+    }
+    for listener in listeners {
+        let name = listener.process_name.to_ascii_lowercase();
+        let name = name.trim_end_matches(".exe");
+        if ["system", "svchost", "lsass", "postgres", "redis-server", "mysqld", "mongod"].contains(&name)
+            || CRITICAL_PORTS.contains(&listener.port)
+            || additional_critical_ports.contains(&listener.port)
+        {
+            return Err(KillError::new("critical_process", format!("Protected service {} on :{} cannot be killed", listener.process_name, listener.port)));
+        }
+    }
+    Ok(())
+}
+
+pub fn kill_pid(pid: u32) -> Result<(), KillError> {
+    // Reject process-group and reserved IDs before scanning or invoking an OS API.
+    if pid <= 1 || pid > i32::MAX as u32 {
+        return Err(KillError::new("invalid_pid", "Reserved or invalid process ID"));
+    }
+    // Host configuration can add protection, never remove the defaults. No
+    // override is exposed through the PID-only webview command.
+    let additional = std::env::var("PORTPAL_CRITICAL_PORTS").unwrap_or_default()
+        .split(',').filter_map(|port| port.trim().parse::<u16>().ok()).collect::<Vec<_>>();
+    let ports = scan_ports();
+    validate_kill(pid, &ports, &additional)?;
+    let mut sys = System::new();
+    sys.refresh_processes();
+    let process = sys.process(sysinfo::Pid::from(pid as usize))
+        .ok_or_else(|| KillError::new("not_observed", "Process disappeared; rescan and try again"))?;
+    if ports.iter().filter(|p| p.pid == pid).any(|p| p.process_name != process.name()) {
+        return Err(KillError::new("process_changed", "Process identity changed; rescan and try again"));
+    }
+
     #[cfg(target_os = "windows")]
-    return kill_windows(pid);
+    return kill_windows(pid).map_err(|e| KillError::new("os_error", e));
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    return kill_unix(pid);
+    return kill_unix(pid).map_err(|e| KillError::new("os_error", e));
 }
 
 // ─── Windows ─────────────────────────────────────────────────────────────────
@@ -241,11 +294,24 @@ fn get_project_path_unix_fallback(pid: u32) -> Option<String> {
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn kill_unix(pid: u32) -> Result<(), String> {
-    unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+    let mut sys = System::new();
+    sys.refresh_processes();
+    let identity = sys.process(sysinfo::Pid::from(pid as usize))
+        .map(|p| p.start_time()).ok_or_else(|| "Process disappeared".to_string())?;
+    if unsafe { libc::kill(pid as i32, libc::SIGTERM) } != 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     if process_exists_unix(pid) {
-        unsafe { libc::kill(pid as i32, libc::SIGKILL); }
+        // Never send the delayed SIGKILL to a process that reused the PID.
+        sys.refresh_processes();
+        if sys.process(sysinfo::Pid::from(pid as usize)).map(|p| p.start_time()) != Some(identity) {
+            return Err("Process identity changed before SIGKILL".into());
+        }
+        if unsafe { libc::kill(pid as i32, libc::SIGKILL) } != 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
     }
     Ok(())
 }
@@ -519,7 +585,7 @@ pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
         if !port_is_listening(port, pid) {
             return Err(format!("pid {} no longer listens on port {}", pid, port));
         }
-        kill_pid(pid)?;
+        kill_pid(pid).map_err(|e| e.message)?;
         std::thread::sleep(std::time::Duration::from_millis(800));
     }
 
@@ -554,6 +620,33 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
+
+    fn listener(pid: u32, port: u16, name: &str) -> PortInfo {
+        PortInfo { pid, port, process_name: name.into(), project_path: None,
+            project_name: None, protocol: "TCP".into(), start_cmd: None }
+    }
+
+    #[test]
+    fn kill_policy_rejects_unknown_and_reserved_pids() {
+        for pid in [0, 1, u32::MAX, i32::MAX as u32 + 1] {
+            assert_eq!(validate_kill(pid, &[listener(pid, 3000, "node")], &[]).unwrap_err().code, "invalid_pid");
+        }
+        assert_eq!(validate_kill(42, &[], &[]).unwrap_err().code, "not_observed");
+        assert_eq!(kill_pid(0).unwrap_err().code, "invalid_pid");
+        assert_eq!(kill_pid(1).unwrap_err().code, "invalid_pid");
+        assert_eq!(kill_pid(u32::MAX).unwrap_err().code, "invalid_pid");
+    }
+
+    #[test]
+    fn kill_policy_rejects_critical_names_and_any_protected_listener() {
+        for name in ["system", "SVCHOST.EXE", "lsass", "Postgres", "redis-server", "mysqld.exe", "mongod"] {
+            assert_eq!(validate_kill(42, &[listener(42, 3000, name)], &[]).unwrap_err().code, "critical_process");
+        }
+        let ports = [listener(42, 3000, "node"), listener(42, 5432, "node")];
+        assert_eq!(validate_kill(42, &ports, &[]).unwrap_err().code, "critical_process");
+        assert!(validate_kill(42, &[listener(42, 9000, "node")], &[9000]).is_err());
+        assert!(validate_kill(42, &[listener(42, 3000, "node")], &[]).is_ok());
+    }
 
     #[test]
     fn extract_project_name_some() {

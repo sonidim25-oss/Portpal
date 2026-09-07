@@ -31,6 +31,39 @@ function createGateway(overrides: Partial<PortPalGateway> = {}): PortPalGateway 
 describe('usePortPalData', () => {
   afterEach(() => vi.useRealTimers());
 
+  it('surfaces typed backend policy errors without removing the process', async () => {
+    const gateway = createGateway({ killProcess: vi.fn().mockRejectedValue({ code: 'not_observed', message: 'PID is not a currently observed listening process' }) });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => { expect(await result.current.killPort(port)).toBe('failed'); });
+    expect(result.current.toast).toContain('PID is not a currently observed listening process');
+    expect(result.current.ports).toEqual([port]);
+    expect(result.current.killedPorts.size).toBe(0);
+  });
+
+  it('blocks protected listeners even when another row for the PID appears safe', async () => {
+    const gateway = createGateway({ getPorts: vi.fn().mockResolvedValue([port, { ...port, port: 5432, process_name: 'Postgres' }]) });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => { expect(await result.current.killPort(port)).toBe('critical'); });
+    expect(gateway.killProcess).not.toHaveBeenCalled();
+  });
+
+  it('atomically skips duplicate in-flight kills of the same PID', async () => {
+    let finish!: () => void;
+    const gateway = createGateway({ killProcess: vi.fn().mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; })) });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      const first = result.current.killPort(port);
+      expect(await result.current.killPort({ ...port, port: 3000 })).toBe('busy');
+      finish();
+      expect(await first).toBe('killed');
+    });
+    expect(gateway.killProcess).toHaveBeenCalledTimes(1);
+    expect(result.current.killing.size).toBe(0);
+  });
+
   it('loads ports, events, and traffic on mount and records the successful scan time', async () => {
     const gateway = createGateway({
       getPortEvents: vi.fn().mockResolvedValue([{ port: 5173, pid: 1234, process_name: 'node', framework: 'Vite', event_type: 'started', timestamp: 900 }] satisfies PortEvent[]),

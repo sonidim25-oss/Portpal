@@ -121,13 +121,16 @@ describe('App integration - invoke + ports', () => {
     expect(screen.queryByRole('button', { name: 'Port Map' })).not.toBeInTheDocument();
   });
 
-  it('kills only the current filtered rows immediately with unchanged PID payloads', async () => {
+  it('confirms filtered bulk kills with unchanged PID payloads', async () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
 
     await user.type(screen.getByPlaceholderText('Search ports, process, project...'), 'node');
     await user.click(screen.getByRole('button', { name: 'Kill All' }));
+
+    expect(invoke).not.toHaveBeenCalledWith('kill_process', expect.anything());
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('kill_process', { pid: 1111 }));
     expect(invoke).toHaveBeenCalledWith('kill_process', { pid: 2222 });

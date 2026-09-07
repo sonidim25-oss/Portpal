@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PortEvent, PortInfo, TrafficByPort } from './types';
 import { tauriPortPalGateway, type PortPalGateway } from '../lib/tauri';
+import { isCriticalProcess, type KillOutcome } from './killPolicy';
 
 type ResourceErrors = { ports: string | null; events: string | null; traffic: string | null };
 
@@ -19,11 +20,12 @@ export interface UsePortPalDataResult {
   refreshPorts(): Promise<void>;
   refreshEvents(): Promise<void>;
   refreshTraffic(): Promise<void>;
-  killPort(port: PortInfo): Promise<void>;
+  killPort(port: PortInfo): Promise<KillOutcome>;
   restartPort(port: PortInfo): Promise<void>;
 }
 
 function errorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'message' in error) return String(error.message);
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -50,6 +52,7 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
   const [errors, setErrors] = useState<ResourceErrors>({ ports: null, events: null, traffic: null });
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingKills = useRef(new Set<number>());
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -141,7 +144,13 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
     };
   }, [gateway, refreshEvents, refreshPorts, refreshTraffic]);
 
-  const killPort = useCallback(async (port: PortInfo) => {
+  const killPort = useCallback(async (port: PortInfo): Promise<KillOutcome> => {
+    if (pendingKills.current.has(port.pid)) return 'busy';
+    if ([port, ...ports.filter((p) => p.pid === port.pid)].some(isCriticalProcess)) {
+      showToast(`Protected service ${port.process_name} cannot be killed`);
+      return 'critical';
+    }
+    pendingKills.current.add(port.pid);
     setKilling((current) => new Set(current).add(port.pid));
     try {
       await gateway.killProcess(port.pid);
@@ -150,16 +159,19 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
       if (port.start_cmd && port.project_path) {
         setKilledPorts((current) => new Map(current).set(port.port, port));
       }
-    } catch {
-      showToast(`Failed to kill PID ${port.pid}`);
+      return 'killed';
+    } catch (error) {
+      showToast(`Failed to kill PID ${port.pid}: ${errorMessage(error)}`);
+      return typeof error === 'object' && error !== null && 'code' in error && error.code === 'critical_process' ? 'critical' : 'failed';
     } finally {
+      pendingKills.current.delete(port.pid);
       setKilling((current) => {
         const next = new Set(current);
         next.delete(port.pid);
         return next;
       });
     }
-  }, [gateway, showToast]);
+  }, [gateway, showToast, ports]);
 
   const restartPort = useCallback(async (port: PortInfo) => {
     if (!port.start_cmd || !port.project_path) return;

@@ -39,7 +39,7 @@ fn get_ports() -> Vec<scanner::PortInfo> {
 }
 
 #[tauri::command]
-fn kill_process(pid: u32) -> Result<(), String> {
+fn kill_process(pid: u32) -> Result<(), scanner::KillError> {
     scanner::kill_pid(pid)
 }
 
