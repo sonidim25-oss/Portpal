@@ -146,7 +146,7 @@ function PortRow({
           ? <span className="ports-table__stopped-label">STOPPED</span>
           : <span className="ui-visually-hidden">Listening</span>}
       </td>
-      <td>
+      <td className="ports-table__project">
         <span className="ports-table__value-stack">
           <span>{port.process_name}</span>
           {port.start_cmd && (
@@ -163,7 +163,7 @@ function PortRow({
         </span>
       </td>
       <td className="ports-table__mono">{port.pid}</td>
-      <td className="ports-table__mono">{killed ? "—" : latestConnectionCount(traffic, port)}</td>
+      <td className="ports-table__mono ports-table__connections">{killed ? "—" : latestConnectionCount(traffic, port)}</td>
       <td>{observedAt === undefined ? "—" : timeAgo(observedAt)}</td>
       <td className="ports-table__actions">
         {restartable && (
@@ -194,9 +194,9 @@ export function PortTable({
           <tr>
             <th scope="col">PORT</th>
             <th scope="col">PROCESS</th>
-            <th scope="col">PROJECT</th>
+            <th scope="col" className="ports-table__project">PROJECT</th>
             <th scope="col">PID</th>
-            <th scope="col">CONNECTIONS</th>
+            <th scope="col" className="ports-table__connections">CONNECTIONS</th>
             <th scope="col">STARTED</th>
             <th scope="col" className="ports-table__actions-heading">ACTIONS</th>
           </tr>

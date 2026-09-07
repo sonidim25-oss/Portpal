@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import * as d3 from "d3";
 import type { GraphEdgeData, GraphNodeData, PortGraph } from "../../lib/tauri";
 import type { MapPoint } from "./MapMinimap";
@@ -6,6 +6,10 @@ import type { MapPoint } from "./MapMinimap";
 type SimNode = GraphNodeData & d3.SimulationNodeDatum;
 type SimEdge = Omit<GraphEdgeData, "source" | "target"> & d3.SimulationLinkDatum<SimNode>;
 export type TopologyHandle = { zoomBy(delta: number): void; fit(): void };
+
+const NODE_HALF_WIDTH = 72;
+const NODE_HALF_HEIGHT = 38;
+const FIT_PADDING = 24;
 
 export function PortTopology({ graph, grouped, selectedId, onSelect, onZoom, onSettled, ref }: {
   graph: PortGraph; grouped: boolean; selectedId?: string; onSelect(id: string): void;
@@ -15,30 +19,41 @@ export function PortTopology({ graph, grouped, selectedId, onSelect, onZoom, onS
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | undefined>(undefined);
   const nodesRef = useRef<SimNode[]>([]);
+  const dimensionsRef = useRef({ width: 900, height: 560 });
 
   useEffect(() => {
     d3.select(svgRef.current).selectAll<SVGGElement, SimNode>(".port-map__node")
       .classed("is-selected", d => d.id === selectedId);
   }, [selectedId]);
 
-  const applyFit = () => {
+  const applyFit = useCallback(() => {
     const el = svgRef.current; const nodes = nodesRef.current;
     if (!el || !nodes.length || !zoomRef.current) return;
-    const w = el.clientWidth || 900, h = el.clientHeight || 560;
-    const minX = d3.min(nodes, d => d.x) ?? 0, maxX = d3.max(nodes, d => d.x) ?? w;
-    const minY = d3.min(nodes, d => d.y) ?? 0, maxY = d3.max(nodes, d => d.y) ?? h;
-    const scale = Math.max(.5, Math.min(2, .85 / Math.max((maxX-minX)/w, (maxY-minY)/h, .01)));
+    const { width: w, height: h } = dimensionsRef.current;
+    const minX = (d3.min(nodes, d => d.x) ?? 0) - NODE_HALF_WIDTH;
+    const maxX = (d3.max(nodes, d => d.x) ?? w) + NODE_HALF_WIDTH;
+    const minY = (d3.min(nodes, d => d.y) ?? 0) - NODE_HALF_HEIGHT;
+    const maxY = (d3.max(nodes, d => d.y) ?? h) + NODE_HALF_HEIGHT;
+    const availableWidth = Math.max(1, w - FIT_PADDING * 2);
+    const availableHeight = Math.max(1, h - FIT_PADDING * 2);
+    const scale = Math.max(.5, Math.min(2, Math.min(availableWidth / Math.max(1, maxX-minX), availableHeight / Math.max(1, maxY-minY))));
     const transform = d3.zoomIdentity.translate(w/2-scale*(minX+maxX)/2, h/2-scale*(minY+maxY)/2).scale(scale);
     d3.select(el).call(zoomRef.current.transform, transform);
-  };
+  }, []);
   useImperativeHandle(ref, () => ({
-    zoomBy(delta) { const el=svgRef.current; if(el && zoomRef.current) d3.select(el).call(zoomRef.current.scaleBy, 1 + delta); },
+    zoomBy(delta) {
+      const el=svgRef.current; if (!el || !zoomRef.current) return;
+      const current = d3.zoomTransform(el).k;
+      const target = Math.max(.5, Math.min(2, current + delta));
+      d3.select(el).call(zoomRef.current.scaleTo, target);
+    },
     fit: applyFit,
-  }));
+  }), [applyFit]);
 
   useEffect(() => {
     const el = svgRef.current; if (!el) return;
     const width = el.clientWidth || 900, height = el.clientHeight || 560;
+    dimensionsRef.current = { width, height };
     const svg = d3.select(el); svg.selectAll("*").remove();
     const scene = svg.append("g");
     const zoom = d3.zoom<SVGSVGElement, unknown>().scaleExtent([.5, 2]).on("zoom", event => {
@@ -46,8 +61,8 @@ export function PortTopology({ graph, grouped, selectedId, onSelect, onZoom, onS
       onSettled(nodesRef.current.map(n => ({ id:n.id, x:n.x ?? 0, y:n.y ?? 0 })), {
         x: -event.transform.x / event.transform.k,
         y: -event.transform.y / event.transform.k,
-        width: width / event.transform.k,
-        height: height / event.transform.k,
+        width: dimensionsRef.current.width / event.transform.k,
+        height: dimensionsRef.current.height / event.transform.k,
       });
     });
     zoomRef.current = zoom; svg.call(zoom);
@@ -79,9 +94,17 @@ export function PortTopology({ graph, grouped, selectedId, onSelect, onZoom, onS
       node.attr("transform", d => `translate(${d.x ?? 0},${d.y ?? 0})`);
     }).on("end", () => {
       simulation.stop();
-      onSettled(nodes.map(n => ({ id:n.id, x:n.x ?? 0, y:n.y ?? 0 })), { x:0, y:0, width, height });
+      applyFit();
     });
-    return () => { simulation.stop(); };
-  }, [graph, grouped, onSelect, onSettled, onZoom]);
+    const resizeObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(([entry]) => {
+      const nextWidth = entry.contentRect.width || el.clientWidth;
+      const nextHeight = entry.contentRect.height || el.clientHeight;
+      if (!nextWidth || !nextHeight) return;
+      dimensionsRef.current = { width: nextWidth, height: nextHeight };
+      applyFit();
+    });
+    resizeObserver?.observe(el);
+    return () => { resizeObserver?.disconnect(); simulation.stop(); };
+  }, [applyFit, graph, grouped, onSelect, onSettled, onZoom]);
   return <svg ref={svgRef} className="port-map__topology" aria-label="Port topology" />;
 }

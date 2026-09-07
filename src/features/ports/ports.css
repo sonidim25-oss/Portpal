@@ -355,6 +355,9 @@
 }
 
 @media (max-width: 820px) {
+  .ports-table-wrap { min-width: 610px; }
+  .ports-table__project,
+  .ports-table__connections { display: none; }
   .ports-page__header > .ui-page-header {
     align-items: flex-start;
     flex-direction: column;
@@ -371,7 +374,6 @@
   .ports-page__filter-controls .ui-segmented-control__option { padding-inline: 8px; }
 
   .ports-page__workspace > .port-inspector {
-    width: 100%;
-    flex-basis: 100%;
+    width: min(360px, calc(100% - 24px));
   }
 }

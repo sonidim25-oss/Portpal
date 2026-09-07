@@ -12,8 +12,8 @@ describe("Port Map responsive layout contracts", () => {
 
   it("uses a full shared inspector width on desktop and overlays it below 980px", () => {
     expect(styles).toMatch(/\.port-map__workspace\s*>\s*\.port-inspector\s*\{[^}]*width:\s*320px/s);
-    const compact = styles.match(/@media\s*\(max-width:\s*979px\)\s*\{([\s\S]*)$/)?.[1] ?? "";
-    expect(compact).toMatch(/\.port-map__workspace\s*>\s*\.port-inspector\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*width:\s*min\(320px,\s*calc\(100%\s*-\s*24px\)\)/s);
+    const compact = styles.match(/@media\s*\(max-width:\s*980px\)\s*\{([\s\S]*)$/)?.[1] ?? "";
+    expect(compact).toMatch(/\.port-map__workspace\s*>\s*\.port-inspector\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0\s+0\s+0\s+auto;[^}]*width:\s*min\(360px,\s*calc\(100%\s*-\s*24px\)\)/s);
   });
 
   it("allows the topology to contract inside a 480px-tall window", () => {

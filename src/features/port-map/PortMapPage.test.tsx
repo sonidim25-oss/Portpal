@@ -60,4 +60,17 @@ describe("PortMapPage", () => {
     await user.type(screen.getByRole("searchbox", { name: "Search port map" }), "PortPal");
     expect(screen.getByRole("checkbox", { name: "Group by project" })).toBeDisabled();
   });
+
+  it("keeps a valid topology visible and offers retry after a refresh fails", async () => {
+    const user = userEvent.setup();
+    const { gateway } = renderMap();
+    await screen.findByRole("button", { name: /PortPal.*5173.*node/i });
+    vi.mocked(gateway.getPortGraph).mockRejectedValueOnce(new Error("map refresh unavailable"));
+
+    await user.click(screen.getByRole("button", { name: "Refresh map" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("map refresh unavailable");
+    expect(screen.getByRole("button", { name: /PortPal.*5173.*node/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+  });
 });

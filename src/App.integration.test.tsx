@@ -22,6 +22,10 @@ describe('App integration - invoke + ports', () => {
       if (cmd === 'get_port_traffic') return Promise.resolve({});
       if (cmd === 'kill_process') return Promise.resolve();
       if (cmd === 'restart_process') return Promise.resolve();
+      if (cmd === 'get_port_graph') return Promise.resolve({
+        nodes: mockPorts.map((port) => ({ id: `port:${port.port}`, ...port, framework: null, is_dev: Boolean(port.project_name), connection_count: 0 })),
+        edges: [],
+      });
       return Promise.resolve([]);
     });
     // listen mock returns unsubscribe
@@ -89,6 +93,36 @@ describe('App integration - invoke + ports', () => {
       cmd: 'npm run dev',
       cwd: '/a/my-app',
     }));
+  });
+
+  it('keeps all seven navigation destinations wired and closes the map back to Ports', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
+
+    for (const [navigation, heading] of [
+      ['Dashboard', 'Dashboard'], ['Traffic', 'Traffic Monitor'], ['Services', 'Services'],
+      ['Logs', 'Event Logs'], ['Settings', 'Settings'], ['Ports', 'Ports'], ['Port Map', 'Port Map'],
+    ] as const) {
+      await user.click(screen.getByRole('button', { name: navigation }));
+      expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Close Port Map' }));
+    expect(screen.getByRole('heading', { name: 'Ports' })).toBeInTheDocument();
+  });
+
+  it('kills only the current filtered rows immediately with unchanged PID payloads', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
+
+    await user.type(screen.getByPlaceholderText('Search ports, process, project...'), 'node');
+    await user.click(screen.getByRole('button', { name: 'Kill All' }));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('kill_process', { pid: 1111 }));
+    expect(invoke).toHaveBeenCalledWith('kill_process', { pid: 2222 });
+    expect(invoke).not.toHaveBeenCalledWith('kill_process', { pid: 3333 });
   });
 
   it('ports-updated event updates list', async () => {

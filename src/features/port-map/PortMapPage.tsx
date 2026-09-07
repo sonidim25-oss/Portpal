@@ -40,6 +40,7 @@ export function PortMapPage({ ports, traffic, observedAt, killedPorts, killing, 
       <IconButton label="Close Port Map" onClick={onClose}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 3 10 10M13 3 3 13" /></svg></IconButton>
     </>} /></div>
     <MapControls search={search} category={category} zoom={zoom} canGroup={canGroup} grouped={grouped} onSearch={setSearch} onCategory={setCategory} onGrouped={setGrouped} onZoom={delta => topology.current?.zoomBy(delta)} onFit={() => topology.current?.fit()} />
+    {error && graph.nodes.length > 0 && <div className="port-map__error" role="alert"><span>{error}</span><Button onClick={() => void refresh()}>Retry</Button></div>}
     <div className="port-map__workspace">
       <div className="port-map__canvas">
         {loading && graph.nodes.length === 0 ? <LoadingState label="Mapping connections…" /> : error && graph.nodes.length === 0 ? <EmptyState title="Unable to load map" description={error}><Button onClick={() => void refresh()}>Retry</Button></EmptyState> : filtered.nodes.length === 0 ? <EmptyState title="No ports to map" description="Adjust filters or start a server." /> : <PortTopology ref={topology} graph={filtered} grouped={grouped} selectedId={selectedId} onSelect={select} onZoom={setZoom} onSettled={settled} />}

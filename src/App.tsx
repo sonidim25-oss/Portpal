@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import './App.css';
 import './features/secondary-pages.css';
 import { usePortPalData } from './app/usePortPalData';
 import type { NavPage } from './app/types';
