@@ -20,6 +20,7 @@
   --pi-border: var(--border-subtle, rgba(255, 255, 255, 0.14));
   --pi-radius: 6px;
   --pi-gap: 6px;
+  --pi-mono: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
 }
 
 @media (prefers-color-scheme: light) {
@@ -46,6 +47,7 @@
 }
 
 .pi-label__port {
+  font-family: var(--pi-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
@@ -78,6 +80,7 @@
 }
 
 .pi-badge__port {
+  font-family: var(--pi-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
