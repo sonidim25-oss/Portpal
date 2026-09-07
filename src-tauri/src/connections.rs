@@ -50,17 +50,28 @@ fn is_dev_port(port: u16) -> bool {
     DEV_PORTS.iter().any(|(p, _)| *p == port)
 }
 
+/// Stable endpoint identity: ports are NOT unique (SO_REUSEADDR conflicts,
+/// v4/v6 dual-binds, stale rows), so nodes are keyed by (port, pid) and ids
+/// use the format `port:{port}:{pid}`. The legacy `port:{port}` format dropped
+/// conflicting listeners sharing a port.
+type NodeKey = (u16, u32);
+
+fn node_id(port: u16, pid: u32) -> String {
+    format!("port:{}:{}", port, pid)
+}
+
 pub fn get_port_graph(
     listening: &[(u16, u32, String, Option<String>)],
 ) -> PortGraph {
     // listening: (port, pid, process_name, project_name)
     let connections = get_active_connections();
 
-    // Build node map from listening ports
-    let mut node_map: HashMap<u16, GraphNode> = HashMap::new();
+    // Build node map from listening ports, keyed by endpoint identity so
+    // conflicting listeners on the same port each keep their node.
+    let mut node_map: HashMap<NodeKey, GraphNode> = HashMap::new();
     for (port, pid, process_name, project_name) in listening {
-        node_map.insert(*port, GraphNode {
-            id: format!("port:{}", port),
+        node_map.insert((*port, *pid), GraphNode {
+            id: node_id(*port, *pid),
             port: *port,
             pid: *pid,
             process_name: process_name.clone(),
@@ -71,23 +82,40 @@ pub fn get_port_graph(
         });
     }
 
-    // Build PID → listening port lookup
-    let mut pid_to_port: HashMap<u32, Vec<u16>> = HashMap::new();
+    // Build PID → listening endpoint lookup
+    let mut pid_to_keys: HashMap<u32, Vec<NodeKey>> = HashMap::new();
     for (port, pid, _, _) in listening {
-        pid_to_port.entry(*pid).or_default().push(*port);
+        pid_to_keys.entry(*pid).or_default().push((*port, *pid));
     }
+
+    // Build port → endpoint lookup for direct port matches
+    let mut port_to_keys: HashMap<u16, Vec<NodeKey>> = HashMap::new();
+    for key in node_map.keys() {
+        port_to_keys.entry(key.0).or_default().push(*key);
+    }
+    let has_listeners = |port: u16| port_to_keys.get(&port).map(|v| !v.is_empty()).unwrap_or(false);
 
     // Build edges from active connections
     let mut edges: Vec<GraphEdge> = Vec::new();
-    let mut seen_edges: HashSet<(u16, u16)> = HashSet::new();
+    let mut seen_edges: HashSet<(NodeKey, NodeKey)> = HashSet::new();
 
     for (src_port, dst_port, src_pid, dst_pid) in &connections {
-        // Strategy 1: both ports are known listening ports (direct match)
-        let src_listen = node_map.contains_key(src_port);
-        let dst_listen = node_map.contains_key(dst_port);
+        // Strategy 1: both ports are known listening ports (direct match).
+        // On a port conflict every listener on each side gets an edge.
+        let src_listen = has_listeners(*src_port);
+        let dst_listen = has_listeners(*dst_port);
 
         if src_listen && dst_listen {
-            add_edge(&mut edges, &mut seen_edges, &mut node_map, *src_port, *dst_port);
+            let empty: Vec<NodeKey> = Vec::new();
+            let src_keys = port_to_keys.get(src_port).unwrap_or(&empty).clone();
+            let dst_keys = port_to_keys.get(dst_port).unwrap_or(&empty).clone();
+            for a in &src_keys {
+                for b in &dst_keys {
+                    if a != b {
+                        add_edge(&mut edges, &mut seen_edges, &mut node_map, *a, *b);
+                    }
+                }
+            }
             continue;
         }
 
@@ -95,20 +123,28 @@ pub fn get_port_graph(
         // This catches ephemeral-port connections (client connects to server on a random port)
         if dst_listen {
             // dst_port is a server; src_pid might own another listening port
-            if let Some(src_ports) = pid_to_port.get(src_pid) {
-                for sp in src_ports {
-                    if *sp != *dst_port {
-                        add_edge(&mut edges, &mut seen_edges, &mut node_map, *sp, *dst_port);
+            if let Some(src_keys) = pid_to_keys.get(src_pid) {
+                let empty: Vec<NodeKey> = Vec::new();
+                let dst_keys = port_to_keys.get(dst_port).unwrap_or(&empty).clone();
+                for sp in src_keys.clone() {
+                    for dp in &dst_keys {
+                        if sp != *dp {
+                            add_edge(&mut edges, &mut seen_edges, &mut node_map, sp, *dp);
+                        }
                     }
                 }
             }
         }
         if src_listen {
             // src_port is a server; dst_pid might own another listening port
-            if let Some(dst_ports) = pid_to_port.get(dst_pid) {
-                for dp in dst_ports {
-                    if *dp != *src_port {
-                        add_edge(&mut edges, &mut seen_edges, &mut node_map, *src_port, *dp);
+            if let Some(dst_keys) = pid_to_keys.get(dst_pid) {
+                let empty: Vec<NodeKey> = Vec::new();
+                let src_keys = port_to_keys.get(src_port).unwrap_or(&empty).clone();
+                for dp in dst_keys.clone() {
+                    for sp in &src_keys {
+                        if *sp != dp {
+                            add_edge(&mut edges, &mut seen_edges, &mut node_map, *sp, dp);
+                        }
                     }
                 }
             }
@@ -123,15 +159,15 @@ pub fn get_port_graph(
 
 fn add_edge(
     edges: &mut Vec<GraphEdge>,
-    seen: &mut HashSet<(u16, u16)>,
-    node_map: &mut HashMap<u16, GraphNode>,
-    a: u16, b: u16,
+    seen: &mut HashSet<(NodeKey, NodeKey)>,
+    node_map: &mut HashMap<NodeKey, GraphNode>,
+    a: NodeKey, b: NodeKey,
 ) {
     let key = if a < b { (a, b) } else { (b, a) };
     if seen.insert(key) {
         edges.push(GraphEdge {
-            source: format!("port:{}", a),
-            target: format!("port:{}", b),
+            source: node_id(a.0, a.1),
+            target: node_id(b.0, b.1),
             active: true,
         });
         if let Some(n) = node_map.get_mut(&a) {
@@ -267,4 +303,40 @@ fn get_connections_linux() -> Vec<(u16, u16, u32, u32)> {
         }
     }
     conns
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn listening(port: u16, pid: u32) -> (u16, u32, String, Option<String>) {
+        (port, pid, "node".to_string(), None)
+    }
+
+    #[test]
+    fn conflicting_listeners_on_same_port_keep_distinct_nodes() {
+        // Obscure ports keep live system connections out of the assertion.
+        let graph = get_port_graph(&[listening(47111, 101), listening(47111, 202)]);
+
+        let mut ids: Vec<&str> = graph.nodes.iter().map(|n| n.id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["port:47111:101", "port:47111:202"]);
+
+        // Every edge references a real node id (no dangling port-only ids).
+        let known: HashSet<&str> = ids.into_iter().collect();
+        for edge in &graph.edges {
+            assert!(known.contains(edge.source.as_str()), "dangling edge source {}", edge.source);
+            assert!(known.contains(edge.target.as_str()), "dangling edge target {}", edge.target);
+        }
+    }
+
+    #[test]
+    fn single_listener_uses_endpoint_identity() {
+        let graph = get_port_graph(&[listening(47222, 303)]);
+        assert_eq!(graph.nodes.len(), 1);
+        assert_eq!(graph.nodes[0].id, "port:47222:303");
+        assert_eq!(graph.nodes[0].port, 47222);
+        assert_eq!(graph.nodes[0].pid, 303);
+    }
 }

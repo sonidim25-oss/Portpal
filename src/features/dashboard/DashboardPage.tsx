@@ -1,6 +1,6 @@
 import type { NavPage, PortEvent, PortInfo, TrafficByPort } from '../../app/types';
 import { Sparkline } from '../../components/ui/Sparkline';
-import { DEV_PORTS, getServiceName, timeAgo } from '../../utils/helpers';
+import { DEV_PORTS, getServiceName, getServiceSecondary, portEndpointKey, timeAgo } from '../../utils/helpers';
 
 interface DashboardPageProps {
   ports: PortInfo[];
@@ -28,12 +28,13 @@ export function DashboardPage({ ports, events, traffic, onNavigate }: DashboardP
         <SectionHeading title="Active Services" onViewAll={() => onNavigate('ports')} />
         <div className="secondary-dashboard-services">
           {ports.slice(0, 6).map((port) => (
-            <article key={port.port} className="secondary-dashboard-service">
+            <article key={portEndpointKey(port)} className="secondary-dashboard-service">
               <div className="secondary-row-heading">
                 <span className="secondary-mono">:{port.port}</span>
                 <span className="secondary-state">Active</span>
               </div>
               <div className="secondary-muted">{getServiceName(port)}</div>
+              {getServiceSecondary(port) && <div className="secondary-muted">{getServiceSecondary(port)}</div>}
               <Sparkline data={(traffic[port.port] ?? []).map((sample) => sample.connections)} width={100} height={24} />
             </article>
           ))}

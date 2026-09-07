@@ -1,6 +1,6 @@
 import type { PortInfo, TrafficByPort } from '../../app/types';
 import { Sparkline } from '../../components/ui/Sparkline';
-import { DEV_PORTS, getServiceName } from '../../utils/helpers';
+import { DEV_PORTS, getServiceName, getServiceSecondary, portEndpointKey } from '../../utils/helpers';
 
 interface TrafficPageProps {
   ports: PortInfo[];
@@ -28,12 +28,15 @@ export function TrafficPage({ ports, traffic, error, onRetry }: TrafficPageProps
             const samples = traffic[port.port] ?? [];
             const values = samples.map((sample) => sample.connections);
             return (
-              <div key={port.port} className="secondary-traffic-row" role="listitem" aria-label={`Port ${port.port} traffic`}>
+              <div key={portEndpointKey(port)} className="secondary-traffic-row" role="listitem" aria-label={`Port ${port.port} traffic`}>
                 <div className="secondary-traffic-info">
                   <div className="secondary-row-heading">
                     <span className="secondary-mono">:{port.port}</span>
                     <span>{getServiceName(port)}</span>
                     {DEV_PORTS[port.port] && <span className="secondary-state">{DEV_PORTS[port.port].label}</span>}
+                    {getServiceSecondary(port) && getServiceSecondary(port) !== DEV_PORTS[port.port]?.label && (
+                      <span className="secondary-muted">{getServiceSecondary(port)}</span>
+                    )}
                   </div>
                   <div className="secondary-metrics">
                     <Metric value={values[values.length - 1] ?? 0} label="current" />

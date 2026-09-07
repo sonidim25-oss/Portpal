@@ -4,9 +4,14 @@ import {
   classifyPort,
   countPortsByCategory,
   filterPorts,
+  getServiceGroupKey,
   getServiceName,
+  getServiceSecondary,
   getStatus,
+  groupPortsByService,
+  isSystemServicePort,
   latestConnectionCount,
+  portEndpointKey,
   timeAgo,
   uniqueProcessCount,
 } from './helpers';
@@ -45,6 +50,76 @@ describe('getServiceName', () => {
   it('falls back to process_name for unknown port', () => {
     const p = basePort({ port: 9999, process_name: 'custom.exe', project_name: null });
     expect(getServiceName(p)).toBe('custom.exe');
+  });
+  it('prefers the service label for system ports even when a project_name leaks', () => {
+    // Postgres started from a project folder still reads as Postgres primary.
+    expect(getServiceName(basePort({ port: 5432, process_name: 'postgres', project_name: 'myapp' }))).toBe('Postgres Server');
+    expect(getServiceName(basePort({ port: 3306, process_name: 'mysqld', project_name: 'shop' }))).toBe('MySQL Server');
+    expect(getServiceName(basePort({ port: 6379, process_name: 'redis-server', project_name: 'shop' }))).toBe('Redis Server');
+  });
+});
+
+describe('service naming precedence', () => {
+  it('marks well-known infrastructure ports as system services', () => {
+    for (const port of [22, 80, 443, 3306, 5432, 6379, 27017]) {
+      expect(isSystemServicePort(basePort({ port }))).toBe(true);
+    }
+    expect(isSystemServicePort(basePort({ port: 3000 }))).toBe(false);
+    expect(isSystemServicePort(basePort({ port: 5173 }))).toBe(false);
+  });
+  it('returns the folder as secondary for system services and the framework for dev projects', () => {
+    expect(getServiceSecondary(basePort({ port: 5432, process_name: 'postgres', project_name: 'myapp' }))).toBe('myapp');
+    expect(getServiceSecondary(basePort({ port: 3000, project_name: 'myapp' }))).toBe('React');
+    expect(getServiceSecondary(basePort({ port: 3000, project_name: null }))).toBeNull();
+    expect(getServiceSecondary(basePort({ port: 9999, process_name: 'custom.exe', project_name: null }))).toBeNull();
+  });
+  it('never misclassifies system services as dev when project metadata leaks', () => {
+    expect(classifyPort(basePort({ port: 5432, process_name: 'postgres', project_name: 'myapp', project_path: 'C:\\work\\myapp' }))).toBe('system');
+    expect(classifyPort(basePort({ port: 49664, process_name: 'lsass.exe', project_path: 'C:\\Windows' }))).toBe('system');
+    expect(classifyPort(basePort({ port: 3000, project_name: 'myapp' }))).toBe('dev');
+  });
+});
+
+describe('endpoint identity', () => {
+  it('derives distinct keys for conflicting listeners on the same port', () => {
+    const a = basePort({ port: 3000, pid: 111 });
+    const b = basePort({ port: 3000, pid: 222 });
+    expect(portEndpointKey(a)).toBe('111-3000');
+    expect(portEndpointKey(b)).toBe('222-3000');
+    expect(portEndpointKey(a)).not.toBe(portEndpointKey(b));
+  });
+});
+
+describe('groupPortsByService', () => {
+  it('merges listeners from the same project folder', () => {
+    const groups = groupPortsByService([
+      basePort({ port: 3000, pid: 101, project_name: 'shop', project_path: '/shop' }),
+      basePort({ port: 3001, pid: 102, project_name: 'shop', project_path: '/shop' }),
+      basePort({ port: 5432, pid: 103, process_name: 'postgres' }),
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].name).toBe('shop');
+    expect(groups[0].ports).toHaveLength(2);
+  });
+  it('never merges a folder named like a system service with the real service', () => {
+    const groups = groupPortsByService([
+      basePort({ port: 3000, pid: 101, process_name: 'node', project_name: 'Postgres', project_path: '/work/postgres-demo' }),
+      basePort({ port: 5432, pid: 103, process_name: 'postgres', project_name: null }),
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(getServiceGroupKey(groups[0].ports[0])).not.toBe(getServiceGroupKey(groups[1].ports[0]));
+    // Same display string is disambiguated so both groups stay addressable.
+    expect(groups.map((g) => g.name).sort()).toEqual(['Postgres :3000', 'Postgres :5432']);
+  });
+  it('keeps conflicting listeners on a system port in one group with distinct rows', () => {
+    const groups = groupPortsByService([
+      basePort({ port: 5432, pid: 103, process_name: 'postgres' }),
+      basePort({ port: 5432, pid: 104, process_name: 'postgres' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].ports).toHaveLength(2);
+    const keys = groups[0].ports.map(portEndpointKey);
+    expect(new Set(keys).size).toBe(2);
   });
 });
 

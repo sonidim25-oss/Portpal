@@ -69,6 +69,55 @@ describe('secondary pages', () => {
     expect(within(shop).getByText(':3001')).toBeInTheDocument();
   });
 
+  it('renders duplicate-port listeners as distinct rows without key collisions', () => {
+    const errors: unknown[][] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errors.push(args); });
+    try {
+      const conflict: PortInfo[] = [
+        { port: 3000, pid: 101, process_name: 'node', project_name: 'shop', project_path: '/shop', protocol: 'TCP', start_cmd: 'npm run dev' },
+        { port: 3000, pid: 202, process_name: 'node', project_name: 'shop-2', project_path: '/shop-2', protocol: 'TCP', start_cmd: 'npm run dev' },
+      ];
+      const conflictTraffic: TrafficByPort = { 3000: [{ connections: 2, timestamp: 1 }] };
+      const onNavigate = vi.fn();
+
+      const { unmount } = render(<DashboardPage ports={conflict} events={[]} traffic={conflictTraffic} onNavigate={onNavigate} />);
+      expect(screen.getAllByText(':3000')).toHaveLength(2);
+      expect(screen.getByText('shop')).toBeInTheDocument();
+      expect(screen.getByText('shop-2')).toBeInTheDocument();
+      unmount();
+
+      render(<TrafficPage ports={conflict} traffic={conflictTraffic} error={null} onRetry={vi.fn()} />);
+      expect(screen.getAllByRole('listitem', { name: /port 3000 traffic/i })).toHaveLength(2);
+
+      expect(errors.flat().join(' ').toLowerCase()).not.toContain('unique "key"');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('shows the service label primary with the folder secondary for system ports', () => {
+    const pg: PortInfo[] = [
+      { port: 5432, pid: 103, process_name: 'postgres', project_name: 'myapp', project_path: '/work/myapp', protocol: 'TCP', start_cmd: null },
+    ];
+    const pgTraffic: TrafficByPort = { 5432: [{ connections: 1, timestamp: 1 }] };
+    render(<DashboardPage ports={pg} events={[]} traffic={pgTraffic} onNavigate={vi.fn()} />);
+
+    expect(screen.getByText('Postgres Server')).toBeInTheDocument();
+    expect(screen.getByText('myapp')).toBeInTheDocument();
+  });
+
+  it('never merges a folder named like a system service with the real service', () => {
+    const tricky: PortInfo[] = [
+      { port: 3000, pid: 101, process_name: 'node', project_name: 'Postgres', project_path: '/work/postgres-demo', protocol: 'TCP', start_cmd: 'npm run dev' },
+      { port: 5432, pid: 103, process_name: 'postgres', project_name: null, project_path: null, protocol: 'TCP', start_cmd: null },
+    ];
+    render(<ServicesPage ports={tricky} traffic={{}} />);
+
+    expect(screen.getByText('2 services running across 2 ports')).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Postgres :3000 service' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Postgres :5432 service' })).toBeInTheDocument();
+  });
+
   it('preserves log event rows and refresh while retaining stale events on error', async () => {
     const user = userEvent.setup();
     const onRefresh = vi.fn();

@@ -46,6 +46,25 @@ describe("graphModel", () => {
     expect(resolveGraphSelection(undefined, ports)).toBeUndefined();
   });
 
+  it("keeps conflicting listeners on the same port addressable by endpoint identity", () => {
+    // Backend emits `port:{port}:{pid}` ids so conflicts never overwrite each other.
+    const conflictPorts: PortInfo[] = [
+      { port: 3000, pid: 40, process_name: "node", project_name: "Docs", project_path: "C:/Docs", protocol: "TCP", start_cmd: "npm start" },
+      { port: 3000, pid: 41, process_name: "node", project_name: "Docs-2", project_path: "C:/Docs-2", protocol: "TCP", start_cmd: "npm start" },
+    ];
+    const conflictGraph: PortGraph = {
+      nodes: [
+        { id: "port:3000:40", port: 3000, pid: 40, process_name: "node", project_name: "Docs", framework: "React", is_dev: true, connection_count: 2 },
+        { id: "port:3000:41", port: 3000, pid: 41, process_name: "node", project_name: "Docs-2", framework: "React", is_dev: true, connection_count: 1 },
+      ],
+      edges: [{ source: "port:3000:40", target: "port:3000:41", active: true }],
+    };
+    const filtered = filterGraph(conflictGraph, conflictPorts, { search: "", category: "all" });
+    expect(filtered.nodes.map((node) => node.id)).toEqual(["port:3000:40", "port:3000:41"]);
+    expect(filtered.edges).toHaveLength(1);
+    expect(resolveGraphSelection(filtered.nodes[1], conflictPorts)).toEqual(conflictPorts[1]);
+  });
+
   it("enables grouping only when at least two named projects are visible", () => {
     expect(canGroupByProject(graph.nodes)).toBe(true);
     expect(canGroupByProject(graph.nodes.slice(0, 3))).toBe(false);

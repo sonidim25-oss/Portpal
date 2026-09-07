@@ -252,17 +252,40 @@ describe("PortsPage", () => {
     expect(restartingButton.querySelector(".ports-table__spinner")).toBeInTheDocument();
   });
 
-  it("kills the current filtered results immediately without confirmation", async () => {
+  it("confirms before killing the current filtered results", async () => {
     const user = userEvent.setup();
     const { onKill } = renderPorts();
 
     await user.type(screen.getByRole("searchbox", { name: "Search ports" }), "node");
     await user.click(screen.getByRole("button", { name: "Kill All" }));
 
+    expect(onKill).not.toHaveBeenCalled();
+    expect(screen.getByRole("alertdialog", { name: "Confirm process termination" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+
     expect(onKill).toHaveBeenCalledTimes(2);
     expect(onKill).toHaveBeenNthCalledWith(1, devPort);
     expect(onKill).toHaveBeenNthCalledWith(2, otherPort);
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("names protected Postgres, cancels safely, and deduplicates confirmed PIDs", async () => {
+    const user = userEvent.setup();
+    const postgres = { ...systemPort, port: 5432, process_name: "Postgres" };
+    const { onKill } = renderPorts({ ports: [devPort, { ...devPort, port: 3001 }, postgres, otherPort], killing: new Set([otherPort.pid]) });
+    const button = screen.getByRole("button", { name: "Kill All" });
+    await user.click(button);
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText(/Postgres/)).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(onKill).not.toHaveBeenCalled();
+    expect(button).toHaveFocus();
+    await user.click(button);
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(onKill).toHaveBeenCalledTimes(1));
+    expect(onKill).toHaveBeenCalledWith(devPort);
+    expect(await screen.findByRole("status")).toHaveTextContent("Killed 1, failed 0, skipped critical 1, skipped busy 1");
   });
 
   it("clears selection before opening Port Map", async () => {
@@ -295,6 +318,24 @@ describe("PortsPage", () => {
     expect(screen.queryByText("0 listening ports")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders conflicting listeners on the same port as distinct selectable rows", async () => {
+    const user = userEvent.setup();
+    const conflict: PortInfo = {
+      ...devPort,
+      pid: 9999,
+      project_name: "Other App",
+      project_path: "C:\\work\\other-app",
+    };
+    renderPorts({ ports: [devPort, conflict] });
+
+    expect(screen.getAllByText("3000")).toHaveLength(2);
+    expect(screen.getByRole("row", { name: /3000.*1111/i })).toBeVisible();
+    expect(screen.getByRole("row", { name: /3000.*9999/i })).toBeVisible();
+
+    await user.click(screen.getByRole("row", { name: /3000.*9999/i }));
+    expect(screen.getByRole("complementary", { name: "Port inspector for :3000" })).toBeVisible();
   });
 
   it("keeps a selected killed listener in the inspector and closes a vanished selection", async () => {

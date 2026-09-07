@@ -2,7 +2,7 @@ import type { KeyboardEvent, MouseEvent } from "react";
 import type { PortInfo, TrafficByPort } from "../../app/types";
 import { IconButton } from "../../components/ui/controls";
 import { PortBadge, PortTooltip } from "../../port-intel";
-import { latestConnectionCount, timeAgo } from "../../utils/helpers";
+import { latestConnectionCount, portEndpointKey, timeAgo } from "../../utils/helpers";
 
 export type PortSelection = { port: number; pid: number };
 
@@ -210,7 +210,7 @@ export function PortTable({
         <tbody>
           {ports.map((port) => (
             <PortRow
-              key={`${port.pid}-${port.port}`}
+              key={portEndpointKey(port)}
               port={port}
               traffic={traffic}
               observedAt={observedAt[port.port]}
@@ -225,7 +225,7 @@ export function PortTable({
           ))}
           {[...killedPorts.values()].map((port) => (
             <PortRow
-              key={`stopped-${port.pid}-${port.port}`}
+              key={`stopped-${portEndpointKey(port)}`}
               port={port}
               traffic={traffic}
               observedAt={observedAt[port.port]}

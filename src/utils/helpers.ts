@@ -24,18 +24,109 @@ export const DEV_PORTS: Record<number, { label: string; color: string; icon: str
 const SYSTEM_PORTS = new Set([22, 80, 443, 3306, 5432, 6379, 27017]);
 const SYSTEM_PROCESSES = /^(system|svchost(?:\.exe)?|lsass(?:\.exe)?|postgres|redis-server|mysqld|mongod)$/i;
 
+/**
+ * Well-known infrastructure ports whose service label is authoritative.
+ * Naming precedence rule (documented contract):
+ * - System service ports (Postgres 5432, MySQL 3306, Redis 6379, Mongo 27017,
+ *   SSH 22, HTTP 80, HTTPS 443): the DEV_PORTS service label is PRIMARY
+ *   (e.g. "Postgres Server"); a folder-derived project_name is SECONDARY.
+ *   This holds even when a project_name/project_path leaks onto the listener
+ *   (e.g. Postgres started from a project folder still reads "Postgres").
+ * - Dev servers (React 3000, Vite 5173, ...): project_name is PRIMARY and the
+ *   framework label is SECONDARY.
+ * - Everything else: process_name, with project_name as secondary when present.
+ */
+const SYSTEM_SERVICE_PORTS = new Set([22, 80, 443, 3306, 5432, 6379, 27017]);
+
+export function isSystemServicePort(port: PortInfo): boolean {
+  return SYSTEM_SERVICE_PORTS.has(port.port);
+}
+
 export function classifyPort(port: PortInfo): PortCategory {
-  if (port.project_name || port.project_path) return 'dev';
+  // System first: a project_name/project_path leaking onto an infrastructure
+  // listener (e.g. Postgres launched from a project folder) must not
+  // misclassify it as dev.
   if (SYSTEM_PORTS.has(port.port) || SYSTEM_PROCESSES.test(port.process_name)) return 'system';
+  if (port.project_name || port.project_path) return 'dev';
   if (DEV_PORTS[port.port]) return 'dev';
   return 'other';
 }
 
 export function getServiceName(port: PortInfo): string {
   const dev = DEV_PORTS[port.port];
+  // System services always lead with their service label (see contract above).
+  if (dev && isSystemServicePort(port)) return `${dev.label} Server`;
   if (port.project_name) return port.project_name;
   if (dev) return `${dev.label} Server`;
   return port.process_name;
+}
+
+/**
+ * Secondary display string for the naming precedence contract, or null when
+ * the primary name already carries the full identity.
+ * - System service + folder project: the folder name (e.g. "myapp" under "Postgres Server").
+ * - Dev project on a known framework port: the framework label (e.g. "React" under "myapp").
+ */
+export function getServiceSecondary(port: PortInfo): string | null {
+  const dev = DEV_PORTS[port.port];
+  if (dev && isSystemServicePort(port)) return port.project_name;
+  if (port.project_name && dev && port.project_name !== dev.label) return dev.label;
+  return null;
+}
+
+/**
+ * Canonical collision-free React key / endpoint identity for a listener.
+ * Ports are NOT unique: two processes can conflict on the same port (SO_REUSEADDR,
+ * v4/v6 dual-bind, stale scan rows), so every list key must include the PID.
+ * Matches the PortTable pattern (`${pid}-${port}`).
+ */
+export function portEndpointKey(port: Pick<PortInfo, 'port' | 'pid'>): string {
+  return `${port.pid}-${port.port}`;
+}
+
+export interface ServiceGroup { key: string; name: string; ports: PortInfo[] }
+
+/** Stable grouping identity for a listener (never a bare display string). */
+export function getServiceGroupKey(port: PortInfo): string {
+  const dev = DEV_PORTS[port.port];
+  if (dev && isSystemServicePort(port)) return `system:${dev.label.toLowerCase()}:${port.port}`;
+  if (port.project_path?.trim()) return `project:${port.project_path.trim().toLowerCase()}`;
+  if (port.project_name?.trim()) return `project-name:${port.project_name.trim().toLowerCase()}`;
+  if (dev) return `framework:${dev.label.toLowerCase()}`;
+  return `process:${port.process_name.toLowerCase()}`;
+}
+
+/** Display name for a service group; duplicates are disambiguated by groupPortsByService. */
+export function getServiceGroupName(port: PortInfo): string {
+  const dev = DEV_PORTS[port.port];
+  if (dev && isSystemServicePort(port)) return dev.label;
+  return port.project_name ?? dev?.label ?? port.process_name;
+}
+
+/**
+ * Groups listeners by stable service identity. Two different services that
+ * happen to share a display string (e.g. a dev folder literally named
+ * "Postgres" vs the real Postgres service) never merge: they get distinct
+ * keys, and the duplicate display name is disambiguated with its port.
+ */
+export function groupPortsByService(ports: PortInfo[]): ServiceGroup[] {
+  const grouped = new Map<string, ServiceGroup>();
+  for (const port of ports) {
+    const key = getServiceGroupKey(port);
+    const group = grouped.get(key);
+    if (group) group.ports.push(port);
+    else grouped.set(key, { key, name: getServiceGroupName(port), ports: [port] });
+  }
+  const groups = [...grouped.values()].sort((a, b) => b.ports.length - a.ports.length);
+  const nameCounts = new Map<string, number>();
+  for (const group of groups) nameCounts.set(group.name.toLowerCase(), (nameCounts.get(group.name.toLowerCase()) ?? 0) + 1);
+  for (const group of groups) {
+    if ((nameCounts.get(group.name.toLowerCase()) ?? 0) > 1) {
+      const firstPort = Math.min(...group.ports.map((p) => p.port));
+      group.name = `${group.name} :${firstPort}`;
+    }
+  }
+  return groups;
 }
 
 export function getStatus(port: PortInfo): { label: string; cls: string } {
@@ -95,6 +186,9 @@ export function countPortsByCategory(ports: PortInfo[]): PortCounts {
 }
 
 export function latestConnectionCount(traffic: TrafficByPort, port: PortInfo): number {
+  // TrafficByPort is keyed by port number (backend aggregates per port), so
+  // conflicting listeners on the same port intentionally share samples here.
+  // React keys and selection must still use portEndpointKey (pid-aware).
   const samples = traffic[port.port];
   return samples?.[samples.length - 1]?.connections ?? 0;
 }

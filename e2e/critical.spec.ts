@@ -4,7 +4,7 @@ import { installTauriFixture, type TauriFixture } from "./fixtures/tauri";
 const scratch = ".superpowers/sdd/2026-09-02-portpal-monochrome-redesign";
 
 const ports = [[5173,101,"node","PortPal"],[3000,102,"node","Web App"],[4000,103,"python","API Server"],[5432,104,"postgres",null],[6379,105,"redis-server",null],[8080,106,"node","Dashboard"]].map(([port,pid,process_name,project_name]) => ({ port: port as number, pid: pid as number, process_name: process_name as string, project_name: project_name as string|null, project_path: project_name ? `C:/Projects/${project_name}` : null, protocol: "TCP", start_cmd: project_name ? "npm run dev" : null }));
-const nodes = ports.map((port) => ({ id:`port:${port.port}`, port:port.port, pid:port.pid, process_name:port.process_name, project_name:port.project_name, framework:port.project_name ? "Vite" : null, is_dev:Boolean(port.project_name), connection_count:3 }));
+const nodes = ports.map((port) => ({ id:`port:${port.port}:${port.pid}`, port:port.port, pid:port.pid, process_name:port.process_name, project_name:port.project_name, framework:port.project_name ? "Vite" : null, is_dev:Boolean(port.project_name), connection_count:3 }));
 const fixture: TauriFixture = {
   ports,
   events: ports.map((port,index) => ({ ...port, framework:index < 3 ? "Vite" : null, event_type:"started", timestamp:1_788_800_000_000-index*1000 })),
