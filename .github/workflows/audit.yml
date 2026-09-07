@@ -1,0 +1,38 @@
+name: Dependency audit
+
+# Lightweight monthly audit: read-only, no secrets, no auto-merge.
+# Findings are triaged by a human per docs/dependency-audit.md.
+
+on:
+  schedule:
+    - cron: '0 9 1 * *' # 09:00 UTC on the 1st of each month
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: npm audit (frontend)
+        run: npm audit --audit-level=moderate
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: cargo audit (src-tauri)
+        working-directory: src-tauri
+        run: cargo audit

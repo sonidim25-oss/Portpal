@@ -1,9 +1,8 @@
-use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use sysinfo::System;
 
 #[derive(Serialize, Clone)]
@@ -308,7 +307,7 @@ pub struct LaunchRecord {
 type TrustedLaunches = HashMap<(u16, u32), LaunchRecord>;
 
 fn trusted_launches() -> &'static Mutex<TrustedLaunches> {
-    static TRUSTED: Lazy<Mutex<TrustedLaunches>> = Lazy::new(|| Mutex::new(HashMap::new()));
+    static TRUSTED: LazyLock<Mutex<TrustedLaunches>> = LazyLock::new(|| Mutex::new(HashMap::new()));
     &TRUSTED
 }
 

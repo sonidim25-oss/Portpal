@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A single port event (started, stopped, etc.)
@@ -159,10 +159,8 @@ fn now_millis() -> u64 {
         .as_millis() as u64
 }
 
-// Global singleton
-lazy_static::lazy_static! {
-    pub static ref LOGGER: Mutex<PortLogger> = Mutex::new(PortLogger::new());
-}
+// Global singleton (std::sync::LazyLock — no extra dependency).
+pub static LOGGER: LazyLock<Mutex<PortLogger>> = LazyLock::new(|| Mutex::new(PortLogger::new()));
 
 #[cfg(test)]
 mod tests {

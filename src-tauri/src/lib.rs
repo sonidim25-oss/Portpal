@@ -3,9 +3,6 @@ mod tray;
 mod connections;
 mod logger;
 
-#[macro_use]
-extern crate lazy_static;
-
 use tauri::Manager;
 use std::collections::HashMap;
 
