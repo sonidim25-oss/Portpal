@@ -12,6 +12,23 @@ permissions:
   contents: read
 
 jobs:
+  version-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check version consistency
+        run: |
+          node -e "
+            const pkg = require('./package.json').version;
+            const conf = require('./src-tauri/tauri.conf.json').version;
+            const fs = require('fs');
+            const cargo = fs.readFileSync('src-tauri/Cargo.toml', 'utf8').match(/^version\s*=\s*\"([^\"]+)\"/m)[1];
+            console.log('package.json:', pkg, '| tauri.conf.json:', conf, '| Cargo.toml:', cargo);
+            if (pkg !== conf || pkg !== cargo) { console.error('Version mismatch!'); process.exit(1); }
+          "
+
   audit:
     runs-on: ubuntu-latest
 
