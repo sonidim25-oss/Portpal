@@ -4,6 +4,7 @@ export interface PortInfo {
   process_name: string;
   project_name: string | null;
   project_path: string | null;
+  /** Always 'TCP': the backend scans TCP listeners only. See docs/scan-scope.md. */
   protocol: string;
   start_cmd: string | null;
 }
@@ -24,6 +25,7 @@ export type PortFilter = 'all' | 'dev' | 'system' | 'other';
 export type PortCategory = Exclude<PortFilter, 'all'>;
 export type PortCounts = Record<PortFilter, number>;
 export interface AdvancedPortFilters {
+  /** 'UDP' is offered but never matches: UDP is out of scan scope, not missing data. */
   protocol: 'all' | 'TCP' | 'UDP';
   project: 'all' | 'with-project' | 'without-project';
   restartableOnly: boolean;

@@ -76,6 +76,17 @@ PortPal isn't just a basic `netstat` wrapper — it understands what you build:
 - **Framework Detection** — Recognizes React, Vite, Angular, Django, Node, and more via default ports.
 - **Project Context** — Crawls for `package.json`, `Cargo.toml`, or `go.mod` to name your running servers.
 
+### 📡 Scope: TCP listeners
+PortPal lists **TCP listeners only**, on every platform — that is why every row
+is labelled `TCP` and the Protocol filter marks UDP as not scanned. UDP is
+connectionless, so nothing in `netstat`/`lsof` output separates a socket that
+serves requests from one a client opened to send a datagram, and Kill/Restart
+would be offered on a guess. The scope is stated rather than half-covered; see
+[docs/scan-scope.md](docs/scan-scope.md) for the reasoning, the IPv6 address
+forms the scanner handles (including zone IDs such as `fe80::1%en0:8080`), and
+the PID policy (PID 0 rows are dropped; a systemd-owned PID 1 listener stays
+visible but protected).
+
 ---
 
 ## 📥 Installation

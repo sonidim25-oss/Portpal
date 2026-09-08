@@ -1,3 +1,5 @@
+use crate::netaddr::parse_port;
+use crate::scanner::is_unattributed_pid;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
@@ -60,11 +62,44 @@ fn node_id(port: u16, pid: u32) -> String {
     format!("port:{}:{}", port, pid)
 }
 
+/// One observed ESTABLISHED TCP connection.
+///
+/// `src_pid`/`dst_pid` are `None` when the platform tool did not attribute
+/// that side of the connection to a process — `lsof` never names the remote
+/// peer, and `ss` omits the owner for sockets the current user cannot see.
+/// Both used to arrive as a literal `0`, the same value the tools print for a
+/// socket owned by no user process (see `scanner::is_unattributed_pid`), which
+/// let an unattributed peer match a phantom `(port, 0)` node in `pid_to_keys`
+/// and draw an edge to a process that does not exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Connection {
+    src_port: u16,
+    dst_port: u16,
+    src_pid: Option<u32>,
+    dst_pid: Option<u32>,
+}
+
+/// Normalizes a PID reported by a scan tool: PID 0 carries no identity, so it
+/// becomes "unattributed" rather than a matchable process. PID 1 is a real
+/// process that can own a listed listener, so it is matched like any other —
+/// being protected from kills is a separate question from being real.
+fn attributed_pid(pid: u32) -> Option<u32> {
+    (!is_unattributed_pid(pid)).then_some(pid)
+}
+
 pub fn get_port_graph(
     listening: &[(u16, u32, String, Option<String>)],
 ) -> PortGraph {
+    build_graph(listening, &get_active_connections())
+}
+
+/// The pure half of [`get_port_graph`]: no OS calls, so the edge rules are
+/// testable against fabricated connection rows.
+fn build_graph(
+    listening: &[(u16, u32, String, Option<String>)],
+    connections: &[Connection],
+) -> PortGraph {
     // listening: (port, pid, process_name, project_name)
-    let connections = get_active_connections();
 
     // Build node map from listening ports, keyed by endpoint identity so
     // conflicting listeners on the same port each keep their node.
@@ -99,7 +134,8 @@ pub fn get_port_graph(
     let mut edges: Vec<GraphEdge> = Vec::new();
     let mut seen_edges: HashSet<(NodeKey, NodeKey)> = HashSet::new();
 
-    for (src_port, dst_port, src_pid, dst_pid) in &connections {
+    for conn in connections {
+        let Connection { src_port, dst_port, src_pid, dst_pid } = conn;
         // Strategy 1: both ports are known listening ports (direct match).
         // On a port conflict every listener on each side gets an edge.
         let src_listen = has_listeners(*src_port);
@@ -122,8 +158,9 @@ pub fn get_port_graph(
         // Strategy 2: one side is a listening port, other side's PID owns a different listening port
         // This catches ephemeral-port connections (client connects to server on a random port)
         if dst_listen {
-            // dst_port is a server; src_pid might own another listening port
-            if let Some(src_keys) = pid_to_keys.get(src_pid) {
+            // dst_port is a server; src_pid might own another listening port.
+            // An unattributed side (`None`) matches nothing at all.
+            if let Some(src_keys) = src_pid.and_then(|pid| pid_to_keys.get(&pid)) {
                 let empty: Vec<NodeKey> = Vec::new();
                 let dst_keys = port_to_keys.get(dst_port).unwrap_or(&empty).clone();
                 for sp in src_keys.clone() {
@@ -136,8 +173,8 @@ pub fn get_port_graph(
             }
         }
         if src_listen {
-            // src_port is a server; dst_pid might own another listening port
-            if let Some(dst_keys) = pid_to_keys.get(dst_pid) {
+            // src_port is a server; dst_pid might own another listening port.
+            if let Some(dst_keys) = dst_pid.and_then(|pid| pid_to_keys.get(&pid)) {
                 let empty: Vec<NodeKey> = Vec::new();
                 let src_keys = port_to_keys.get(src_port).unwrap_or(&empty).clone();
                 for dp in dst_keys.clone() {
@@ -179,7 +216,13 @@ fn add_edge(
     }
 }
 
-fn get_active_connections() -> Vec<(u16, u16, u32, u32)> {
+/// Lists established TCP connections.
+///
+/// TCP only, matching `scanner::try_scan_ports`: the graph draws edges between
+/// listeners, and UDP has neither a listening state nor a connection to
+/// observe. A UDP flow would have no ESTABLISHED row to read on any of the
+/// three platforms. See `docs/scan-scope.md`.
+fn get_active_connections() -> Vec<Connection> {
     #[cfg(target_os = "windows")]
     return get_connections_windows();
 
@@ -191,7 +234,7 @@ fn get_active_connections() -> Vec<(u16, u16, u32, u32)> {
 }
 
 #[cfg(target_os = "windows")]
-fn get_connections_windows() -> Vec<(u16, u16, u32, u32)> {
+fn get_connections_windows() -> Vec<Connection> {
     // Use netstat -ano to get all ESTABLISHED connections with PIDs
     let output = match Command::new("netstat").args(["-ano"]).output() {
         Ok(o) => o,
@@ -209,14 +252,13 @@ fn get_connections_windows() -> Vec<(u16, u16, u32, u32)> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 5 { continue; }
 
-        let src_port = parts[1].rsplit(':').next()
-            .and_then(|p| p.parse::<u16>().ok());
-        let dst_port = parts[2].rsplit(':').next()
-            .and_then(|p| p.parse::<u16>().ok());
+        let src_port = parse_port(parts[1]);
+        let dst_port = parse_port(parts[2]);
         let pid: Option<u32> = parts[4].parse().ok();
 
         if let (Some(s), Some(d), Some(p)) = (src_port, dst_port, pid) {
-            if p == 0 { continue; }
+            // A reserved PID owns no identity we can match a node against.
+            let Some(p) = attributed_pid(p) else { continue };
             raw_conns.push((s, d, p));
         }
     }
@@ -228,18 +270,25 @@ fn get_connections_windows() -> Vec<(u16, u16, u32, u32)> {
         // For the destination, we may find its PID from another connection where it's the source
     }
 
-    // Now pair connections: for each (src, dst, pid), find the dst's PID
-    let mut conns: Vec<(u16, u16, u32, u32)> = Vec::new();
+    // Now pair connections: for each (src, dst, pid), find the dst's PID. A
+    // miss means the peer is outside this machine (or outside what netstat
+    // attributed), which stays `None` rather than collapsing to PID 0.
+    let mut conns: Vec<Connection> = Vec::new();
     for (s, d, src_pid) in &raw_conns {
-        let dst_pid = port_pid.get(d).copied().unwrap_or(0);
-        conns.push((*s, *d, *src_pid, dst_pid));
+        conns.push(Connection {
+            src_port: *s,
+            dst_port: *d,
+            src_pid: Some(*src_pid),
+            dst_pid: port_pid.get(d).copied(),
+        });
     }
 
     conns
 }
 
 #[cfg(target_os = "macos")]
-fn get_connections_macos() -> Vec<(u16, u16, u32, u32)> {
+fn get_connections_macos() -> Vec<Connection> {
+    // `-iTCP -sTCP:ESTABLISHED` keeps this TCP-only by construction.
     let output = match Command::new("lsof")
         .args(["-iTCP", "-sTCP:ESTABLISHED", "-n", "-P"])
         .output() {
@@ -262,20 +311,26 @@ fn get_connections_macos() -> Vec<(u16, u16, u32, u32)> {
         let name = parts[parts.len() - 1];
         if !name.contains("->") { continue; }
         let mut sides = name.split("->");
-        let src = sides.next().and_then(|s| s.rsplit(':').next())
-            .and_then(|p| p.parse::<u16>().ok());
-        let dst = sides.next().and_then(|s| s.rsplit(':').next())
-            .and_then(|p| p.parse::<u16>().ok());
+        let src = sides.next().and_then(parse_port);
+        let dst = sides.next().and_then(parse_port);
         if let (Some(s), Some(d)) = (src, dst) {
-            // PID owns the src side; dst PID is unknown (0), will be matched via pid_to_port
-            conns.push((s, d, pid, 0));
+            // This row attributes the local side only; lsof never names the
+            // remote peer's process, so that side is genuinely unknown.
+            conns.push(Connection {
+                src_port: s,
+                dst_port: d,
+                src_pid: attributed_pid(pid),
+                dst_pid: None,
+            });
         }
     }
     conns
 }
 
 #[cfg(target_os = "linux")]
-fn get_connections_linux() -> Vec<(u16, u16, u32, u32)> {
+fn get_connections_linux() -> Vec<Connection> {
+    // `-t` keeps this TCP-only; `ss -u` would list UDP sockets that have no
+    // established state to report.
     let output = match Command::new("ss")
         .args(["-tnp", "state", "established"])
         .output() {
@@ -289,17 +344,18 @@ fn get_connections_linux() -> Vec<(u16, u16, u32, u32)> {
     for line in stdout.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 6 { continue; }
-        let src = parts[3].rsplit(':').next()
-            .and_then(|p| p.parse::<u16>().ok());
-        let dst = parts[4].rsplit(':').next()
-            .and_then(|p| p.parse::<u16>().ok());
-        // Extract PID from the users column, e.g. users:(("node",pid=1234,fd=3))
-        let pid: u32 = parts[5].split("pid=").nth(1)
-            .and_then(|s| s.split(&[',', ')']).next())
+        let src = parse_port(parts[3]);
+        let dst = parse_port(parts[4]);
+        // Extract PID from the users column, e.g. users:(("node",pid=1234,fd=3)).
+        // `ss` omits it for sockets this user cannot attribute, which stays
+        // unknown instead of becoming PID 0.
+        let pid: Option<u32> = parts[5].split("pid=").nth(1)
+            .and_then(|s| s.split(&[',', ')'][..]).next())
             .and_then(|p| p.parse().ok())
-            .unwrap_or(0);
+            .and_then(attributed_pid);
         if let (Some(s), Some(d)) = (src, dst) {
-            conns.push((s, d, pid, 0));
+            // `ss` reports the local owner only; the peer is unattributed.
+            conns.push(Connection { src_port: s, dst_port: d, src_pid: pid, dst_pid: None });
         }
     }
     conns
@@ -312,6 +368,74 @@ mod tests {
 
     fn listening(port: u16, pid: u32) -> (u16, u32, String, Option<String>) {
         (port, pid, "node".to_string(), None)
+    }
+
+    fn conn(src_port: u16, dst_port: u16, src_pid: Option<u32>, dst_pid: Option<u32>) -> Connection {
+        Connection { src_port, dst_port, src_pid, dst_pid }
+    }
+
+    // ─── Unknown peer vs. PID 0 ──────────────────────────────────────────
+
+    #[test]
+    fn unattributed_peer_never_creates_or_matches_a_node() {
+        // lsof/ss report only the local owner. The peer used to arrive as a
+        // literal 0, which matched any listener the caller happened to key at
+        // PID 0 and drew an edge to a process that does not exist.
+        let listening = [listening(47411, 0), listening(47412, 707)];
+        let graph = build_graph(
+            &listening,
+            &[conn(47412, 61000, Some(707), None), conn(61001, 47412, None, None)],
+        );
+
+        // The connections attribute no peer, so no edge can be inferred.
+        assert!(graph.edges.is_empty(), "unexpected edges: {:?}", graph.edges);
+        // And the unknown peer neither created a node nor touched the PID 0 row.
+        let mut ids: Vec<&str> = graph.nodes.iter().map(|n| n.id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["port:47411:0", "port:47412:707"]);
+        assert!(graph.nodes.iter().all(|n| n.connection_count == 0));
+    }
+
+    #[test]
+    fn attributed_peer_on_the_same_machine_still_links() {
+        // The happy path the typed peer must not regress: a real PID on an
+        // ephemeral source port still links to the listener it owns.
+        let graph = build_graph(
+            &[listening(47421, 808), listening(47422, 909)],
+            &[conn(61002, 47422, Some(808), None)],
+        );
+
+        assert_eq!(graph.edges.len(), 1);
+        let edge = &graph.edges[0];
+        let ends = [edge.source.as_str(), edge.target.as_str()];
+        assert!(ends.contains(&"port:47421:808"), "{ends:?}");
+        assert!(ends.contains(&"port:47422:909"), "{ends:?}");
+    }
+
+    #[test]
+    fn only_pid_zero_is_never_attributed() {
+        assert_eq!(attributed_pid(0), None);
+        // PID 1 owns real sockets (systemd socket activation) and is listed,
+        // so a connection it owns must still match its listener.
+        assert_eq!(attributed_pid(1), Some(1));
+        assert_eq!(attributed_pid(2), Some(2));
+        assert_eq!(attributed_pid(31337), Some(31337));
+    }
+
+    #[test]
+    fn a_pid_one_listener_still_gets_its_edges() {
+        // Visible-but-protected: a socket-activated listener is a normal node
+        // as far as the graph is concerned.
+        let graph = build_graph(
+            &[listening(47431, 1), listening(47432, 606)],
+            &[conn(61003, 47432, Some(1), None)],
+        );
+
+        assert_eq!(graph.edges.len(), 1);
+        let edge = &graph.edges[0];
+        let ends = [edge.source.as_str(), edge.target.as_str()];
+        assert!(ends.contains(&"port:47431:1"), "{ends:?}");
+        assert!(ends.contains(&"port:47432:606"), "{ends:?}");
     }
 
     #[test]

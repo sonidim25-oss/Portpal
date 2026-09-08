@@ -352,6 +352,12 @@
   color: var(--text-primary);
 }
 
+.ports-filters__note {
+  color: var(--text-tertiary, var(--text-secondary));
+  font-size: var(--fs-2xs, var(--fs-xs));
+  line-height: 1.4;
+}
+
 .ports-filters__check {
   display: flex;
   align-items: center;

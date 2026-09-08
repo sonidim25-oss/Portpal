@@ -1,3 +1,4 @@
+mod netaddr;
 mod scanner;
 mod tray;
 mod connections;

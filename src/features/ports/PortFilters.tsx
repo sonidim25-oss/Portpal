@@ -83,8 +83,11 @@ export function PortFilters({
               >
                 <option value="all">All protocols</option>
                 <option value="TCP">TCP</option>
-                <option value="UDP">UDP</option>
+                <option value="UDP">UDP (not scanned)</option>
               </select>
+              <small className="ports-filters__note">
+                PortPal scans TCP listeners only, so UDP matches nothing.
+              </small>
             </label>
 
             <label className="ports-filters__field">

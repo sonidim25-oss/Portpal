@@ -1,3 +1,4 @@
+use crate::netaddr::parse_port;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -13,6 +14,9 @@ pub struct PortInfo {
     pub process_name: String,
     pub project_path: Option<String>,
     pub project_name: Option<String>,
+    /// Always `"TCP"`. PortPal scans TCP listeners only; see the scope note on
+    /// [`try_scan_ports`]. The field is carried through so the UI can label
+    /// every row honestly rather than leaving the protocol implicit.
     pub protocol: String,
     /// Display only: never parse or execute this joined command line.
     pub start_cmd: Option<String>,
@@ -95,6 +99,18 @@ pub fn preflight() -> Result<(), ScanError> {
 /// Callers must handle the error rather than substituting an empty list:
 /// `Ok(vec![])` means "nothing is listening", which is a very different claim
 /// from "the scan did not run", and the kill guards depend on the difference.
+///
+/// # Protocol scope: TCP only
+///
+/// Every row this returns is a TCP listener, and `PortInfo::protocol` is
+/// always `"TCP"`. UDP is deliberately out of scope, not merely unimplemented:
+/// UDP is connectionless, so there is no `LISTEN` state to filter on and no
+/// way to tell a bound socket that serves requests from one a client opened to
+/// send a datagram. `netstat -ano` and `lsof -iUDP` would both list those rows
+/// indistinguishably, and PortPal's kill/restart affordances treat a row as an
+/// owned service. Listing UDP would therefore add plausible-looking rows that
+/// the rest of the app cannot reason about, so the scan states its TCP scope
+/// instead of half-covering UDP. See `docs/scan-scope.md`.
 pub fn try_scan_ports() -> Result<Vec<PortInfo>, ScanError> {
     let mut sys = System::new();
     sys.refresh_processes();
@@ -132,8 +148,38 @@ impl KillError {
 
 const CRITICAL_PORTS: &[u16] = &[22, 80, 443, 3306, 5432, 6379, 27017];
 
+/// The one definition of a reserved process ID, used by the kill guards.
+///
+/// PID 0 is not a real process and PID 1 is init/launchd/`wininit`; signalling
+/// either is never something PortPal does. Reserved is a statement about what
+/// may be *acted on*, not about what may be *shown* — see
+/// [`is_unattributed_pid`] for the listing rule.
+pub(crate) fn is_reserved_pid(pid: u32) -> bool {
+    pid <= 1
+}
+
+/// The one definition of a PID that carries no process identity, shared by
+/// both listing scanners and the connection parser.
+///
+/// PID 0 is the placeholder a scan tool prints for a socket it could not
+/// attribute to a user process (System Idle on Windows, the swapper on Unix),
+/// and the sentinel `lsof`/`ss` leave behind for a peer they did not name. It
+/// is never a listener worth showing and never an identity worth matching, so
+/// `connections` keeps that case as `None` rather than as a PID; see
+/// `connections::Connection`.
+///
+/// PID 1 is deliberately *not* covered here. A systemd socket-activated
+/// listener is genuinely bound even though PID 1 owns it, and hiding it would
+/// make a real, occupied port vanish from the UI. Those rows are listed and
+/// then protected at the point of action — [`is_reserved_pid`] rejects them in
+/// `validate_kill`/`kill_pid`, and restart needs a trusted launch record PID 1
+/// never has — the same visible-but-protected pattern as a critical service.
+pub(crate) fn is_unattributed_pid(pid: u32) -> bool {
+    pid == 0
+}
+
 fn validate_kill(pid: u32, ports: &[PortInfo], additional_critical_ports: &[u16]) -> Result<(), KillError> {
-    if pid <= 1 || pid > i32::MAX as u32 {
+    if is_reserved_pid(pid) || pid > i32::MAX as u32 {
         return Err(KillError::new("invalid_pid", "Reserved or invalid process ID"));
     }
     let listeners: Vec<_> = ports.iter().filter(|p| p.pid == pid).collect();
@@ -155,7 +201,7 @@ fn validate_kill(pid: u32, ports: &[PortInfo], additional_critical_ports: &[u16]
 
 pub fn kill_pid(pid: u32) -> Result<(), KillError> {
     // Reject process-group and reserved IDs before scanning or invoking an OS API.
-    if pid <= 1 || pid > i32::MAX as u32 {
+    if is_reserved_pid(pid) || pid > i32::MAX as u32 {
         return Err(KillError::new("invalid_pid", "Reserved or invalid process ID"));
     }
     // Host configuration can add protection, never remove the defaults. No
@@ -187,6 +233,9 @@ pub fn kill_pid(pid: u32) -> Result<(), KillError> {
 
 #[cfg(target_os = "windows")]
 fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo>, ScanError> {
+    // TCP only: `LISTENING` is a TCP connection state, so this filter can
+    // never match a UDP row even though `netstat -ano` prints them. See the
+    // scope note on `try_scan_ports`.
     let stdout = run_scan_tool("netstat", &["-ano"])?;
     let mut ports: Vec<PortInfo> = Vec::new();
     let mut seen_entries: HashSet<(u16, u32)> = HashSet::new();
@@ -196,8 +245,8 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortI
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 5 { continue; }
 
-        let port: u16 = match parts[1].rsplit(':').next()
-            .and_then(|p| p.parse().ok()) {
+        // Local Address is IPv4, bracketed IPv6, or zone-scoped IPv6.
+        let port: u16 = match parse_port(parts[1]) {
             Some(p) => p,
             None => continue,
         };
@@ -207,7 +256,7 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortI
             Err(_) => continue,
         };
 
-        if pid == 0 || seen_entries.contains(&(port, pid)) { continue; }
+        if is_unattributed_pid(pid) || seen_entries.contains(&(port, pid)) { continue; }
         seen_entries.insert((port, pid));
 
         let mut process_name = format!("PID {}", pid);
@@ -273,6 +322,8 @@ fn kill_windows(pid: u32) -> Result<(), String> {
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo>, ScanError> {
+    // TCP only, by the `-iTCP -sTCP:LISTEN` selectors: UDP has no LISTEN state
+    // to select on. See the scope note on `try_scan_ports`.
     let stdout = run_scan_tool("lsof", &["-iTCP", "-sTCP:LISTEN", "-n", "-P"])?;
     let mut ports: Vec<PortInfo> = Vec::new();
     let mut seen_entries: HashSet<(u16, u32)> = HashSet::new();
@@ -292,13 +343,16 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo
             idx -= 1;
         }
         let name = parts[idx];
-        let port: u16 = match name.rsplit(':').next()
-            .and_then(|p| p.parse().ok()) {
+        let port: u16 = match parse_port(name) {
             Some(p) => p,
             None => continue,
         };
 
-        if seen_entries.contains(&(port, pid)) { continue; }
+        // Same listing policy as the Windows scan: only PID 0 is dropped, and
+        // only because it names no process. A PID 1 listener (systemd socket
+        // activation) is a real bound port and stays visible; the kill guards
+        // refuse it, they do not hide it.
+        if is_unattributed_pid(pid) || seen_entries.contains(&(port, pid)) { continue; }
         seen_entries.insert((port, pid));
 
         let mut project_path = None;
@@ -730,11 +784,15 @@ pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
 
 // ─── Test helpers (pure, no OS calls) ───────────────────────────────────────
 
+/// Mirrors the address handling of `scan_windows` for tests that cannot run
+/// `netstat`. The parsing itself lives in `netaddr`.
 #[cfg(test)]
 pub(crate) fn parse_netstat_port(addr: &str) -> Option<u16> {
-    addr.rsplit(':').next()?.parse().ok()
+    parse_port(addr)
 }
 
+/// Mirrors the NAME-column handling of `scan_unix`: the address is the last
+/// token, or the one before it when `lsof` appended a `(LISTEN)` state token.
 #[cfg(test)]
 pub(crate) fn parse_lsof_name_parts(parts: &[&str]) -> Option<u16> {
     if parts.len() < 9 {
@@ -747,8 +805,7 @@ pub(crate) fn parse_lsof_name_parts(parts: &[&str]) -> Option<u16> {
         }
         idx -= 1;
     }
-    let name = parts[idx];
-    name.rsplit(':').next()?.parse().ok()
+    parse_port(parts[idx])
 }
 
 #[cfg(test)]
@@ -949,6 +1006,78 @@ mod tests {
     fn parse_lsof_too_short() {
         let parts: Vec<&str> = "a b c".split_whitespace().collect();
         assert_eq!(parse_lsof_name_parts(&parts), None);
+    }
+
+    #[test]
+    fn parse_netstat_port_ipv6_edge_cases() {
+        // Zone-scoped link-local addresses, as netstat prints them on Windows
+        // (numeric zone) and lsof on macOS (interface name).
+        assert_eq!(parse_netstat_port("[fe80::1%12]:8080"), Some(8080));
+        assert_eq!(parse_netstat_port("fe80::1%en0:8080"), Some(8080));
+        // An address with no port at all is not a listener on the last group.
+        assert_eq!(parse_netstat_port("2001:db8::8080"), None);
+        assert_eq!(parse_netstat_port("::1"), None);
+        // Wildcards and unnumbered ports stay rejected.
+        assert_eq!(parse_netstat_port("*:*"), None);
+        assert_eq!(parse_netstat_port("[::]"), None);
+    }
+
+    #[test]
+    fn parse_lsof_name_ipv6_edge_cases() {
+        let line = "node 1234 user 10u IPv6 0x... 0t0 TCP [fe80::1%en0]:8080 (LISTEN)";
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(parse_lsof_name_parts(&parts), Some(8080));
+
+        // Some builds glue the state token to the address.
+        let glued = "node 1234 user 10u IPv6 0x... 0t0 TCP [::1]:5173(LISTEN)";
+        let parts: Vec<&str> = glued.split_whitespace().collect();
+        assert_eq!(parse_lsof_name_parts(&parts), Some(5173));
+
+        // A row with no port (lsof prints these for some socket states).
+        let portless = "node 1234 user 10u IPv6 0x... 0t0 TCP fe80::1%en0 (LISTEN)";
+        let parts: Vec<&str> = portless.split_whitespace().collect();
+        assert_eq!(parse_lsof_name_parts(&parts), None);
+    }
+
+    #[test]
+    fn reserved_pids_are_zero_and_one_everywhere() {
+        // What may not be acted on: one definition, shared by both kill guards.
+        assert!(is_reserved_pid(0));
+        assert!(is_reserved_pid(1));
+        assert!(!is_reserved_pid(2));
+        assert!(!is_reserved_pid(4321));
+    }
+
+    #[test]
+    fn only_pid_zero_is_unlistable() {
+        // What may not be shown is a narrower rule than what may not be
+        // killed: PID 0 names no process, but PID 1 owns real bound ports
+        // through systemd socket activation and must stay visible.
+        assert!(is_unattributed_pid(0));
+        assert!(!is_unattributed_pid(1));
+        assert!(!is_unattributed_pid(2));
+    }
+
+    #[test]
+    fn a_pid_one_listener_is_listed_but_not_killable() {
+        // The visible-but-protected contract for socket-activated listeners:
+        // the scanners keep the row, and the kill guard is what refuses it.
+        assert!(!is_unattributed_pid(1), "a PID 1 listener must not be filtered out of the listing");
+        let error = validate_kill(1, &[listener(1, 8080, "systemd")], &[]).unwrap_err();
+        assert_eq!(error.code, "invalid_pid");
+    }
+
+    #[test]
+    fn kill_rejects_reserved_pids_before_anything_else() {
+        // The listing filters and the kill guard must agree on what is
+        // reserved; this pins the guard to the shared predicate.
+        for pid in [0, 1] {
+            let error = validate_kill(pid, &[listener(pid, 3000, "node")], &[]).unwrap_err();
+            assert_eq!(error.code, "invalid_pid");
+        }
+        // Still observed-checked, not reserved, for a normal pid.
+        let error = validate_kill(4321, &[], &[]).unwrap_err();
+        assert_eq!(error.code, "not_observed");
     }
 
     // ─── Trusted restart ─────────────────────────────────────────────────
