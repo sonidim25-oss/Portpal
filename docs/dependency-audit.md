@@ -41,6 +41,83 @@ deprecation warnings under `cargo check`, and needs no API migration — so we
 stay pinned and let the monthly `cargo audit` flag any future RustSec advisory
 before reconsidering the migration.
 
+### Removed: `tauri-plugin-opener` and `tauri-plugin-dialog` (capability audit)
+
+Both plugins were registered in `src-tauri/src/lib.rs` and carried in
+`Cargo.toml` / `package.json`, and `opener:default` was granted in
+`src-tauri/capabilities/default.json` — but nothing called them. A repo-wide
+grep found zero imports of `@tauri-apps/plugin-opener` or
+`@tauri-apps/plugin-dialog` and no `openUrl` / `openPath` /
+`revealItemInDir` / `message` / `ask` / `confirm` / `open` / `save` call
+sites in `src/`. The kill confirmation
+(`src/features/ports/KillConfirmation.tsx`) is a custom HTML `alertdialog`,
+not the Tauri dialog plugin.
+
+`opener:default` in particular is a privilege the app never used: it lets the
+webview hand arbitrary URLs and filesystem paths to the OS shell handler. That
+is exactly the primitive a frontend XSS wants, so it was dead attack surface,
+not dead code. Both plugins and the capability entry are gone; `Cargo.lock`
+lost 543 lines of transitive dependencies. The capability now grants only
+`core:default` plus the six `core:window:*` permissions the custom titlebar
+needs (`minimize`, `maximize`, `unmaximize`, `toggle-maximize`,
+`is-maximized`, `close`).
+
+If a genuine need for either plugin appears later, re-add the granular
+permission (`opener:allow-open-url` scoped to specific domains,
+`dialog:allow-message`) rather than the `:default` permission set, and record
+the call site here.
+
+### Content-Security-Policy
+
+There was no CSP at all: no `<meta http-equiv>` in `index.html` and no
+`app.security.csp` in `tauri.conf.json`. Both now exist and are kept in sync.
+
+- Production / preview: `default-src 'self'` with no inline script or style
+  and no remote origins except the two webfont hosts noted under "Known gap"
+  below. `connect-src` keeps `ipc:` and
+  `http://ipc.localhost` (Tauri v2's IPC origins — Windows and Android use the
+  latter); dropping them breaks every `invoke()`.
+- Dev: `app.security.devCsp` plus `.env.development` relax `script-src` with
+  `'unsafe-inline' 'unsafe-eval'` (the `@vitejs/plugin-react` refresh preamble
+  is an inline module script) and `style-src` with `'unsafe-inline'` (Vite
+  injects CSS as inline `<style>` in dev), and allow the HMR websocket on
+  loopback only (`ws://localhost:1420`, `ws://127.0.0.1:1420`). LAN dev mode
+  (`PORTPAL_ALLOW_LAN=1`, see `docs/dev-security.md`) serves HMR from a LAN
+  address that this loopback-only `connect-src` blocks on purpose; override it
+  in an untracked `.env.development.local` if you deliberately opt in.
+
+The meta tag's value comes from `VITE_CSP` in `.env` / `.env.development` /
+`.env.production` via Vite's `%VAR%` HTML replacement, so the dev relaxation
+never reaches a production build — `dist/index.html` carries the strict policy.
+`frame-ancestors` is deliberately absent from the meta value (browsers ignore
+it there and log a console error) and present in the `tauri.conf.json` policy,
+which Tauri serves as a real response header.
+
+Verified against the production build in headless Chromium (`vite preview` +
+Playwright): title is `PortPal`, the strict policy is present, and there are
+zero CSP violations and zero CSP console errors.
+
+#### Known gap: remote webfonts
+
+`src/styles/tokens.css:1` still does
+`@import url('https://fonts.googleapis.com/css2?family=Geist&family=JetBrains+Mono')`,
+so the CSP has to allow `https://fonts.googleapis.com` in `style-src` and
+`https://fonts.gstatic.com` in `font-src`. Those two origins are the **only**
+remote hosts the policy permits — remote script, frame, object, and
+`connect-src` are all still fully blocked, which is the surface that matters
+for a webview RCE.
+
+The remaining cost is privacy and offline behaviour, not code execution: a
+desktop app should not phone Google on every launch, and the UI reflows to the
+fallback stacks when the machine is offline. The fix is to vendor the woff2
+files into `public/fonts/` and swap the `@import` for local `@font-face`
+rules; the two origins then come straight back out of the CSP, `.env*`, and
+`tauri.conf.json`. That was left out of this pass deliberately — it commits
+binary assets and changes rendering, which is a product decision rather than a
+capability-audit one. Simply deleting the `@import` is *not* equivalent:
+neither Geist nor JetBrains Mono is installed on a stock Windows machine, so
+the app would silently fall back to the system sans and Consolas.
+
 ### Not bumped, by policy
 
 Tauri 2.x, React 19, and edition 2021 are out of scope for routine audits;
