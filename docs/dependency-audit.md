@@ -123,6 +123,53 @@ the app would silently fall back to the system sans and Consolas.
 Tauri 2.x, React 19, and edition 2021 are out of scope for routine audits;
 major upgrades need a dedicated, tested change, never an automated bump.
 
+## Bump policy (who, when, what)
+
+- Who: a human maintainer owns every bump; the monthly job is read-only and
+  never opens PRs itself. `npm audit fix --force` and `cargo update` are never
+  run unattended.
+- When: within the monthly cycle after the audit job runs, or out-of-cycle on
+  a critical advisory that affects our usage.
+- Patch (x.y.Z): apply freely via the package manager (`npm audit fix` without
+  `--force`, `cargo update -p <crate>`); lockfile-only is ideal.
+- Minor (x.Y.0, inside the pinned compatible range): apply if changelogs show
+  no breaking API change in what we use; re-run `cargo check`, `npm run
+  test:run`, and `tsc`.
+- Major (X.0.0, or sysinfo 0.30 -> 0.31+ which is breaking for us): dedicated
+  change with call-site migration and full verification — never part of a
+  routine audit.
+- Advisory SLA: critical/high with a compatible fix → patch PR within the
+  cycle; advisory with no compatible fix (e.g. needs a breaking major) → file
+  an issue, note the blocker below, keep the monthly job green.
+
+## 2026-09 review (monthly audit + pin re-check)
+
+- `npm audit`: 10 findings before, all in the dev/build toolchain (vite 7.3.2,
+  postcss, esbuild, nanoid, browserslist, babel, vitest-mocker chain) — none
+  in `d3`, `react`, or `react-dom`. Ran `npm audit fix` (no `--force`):
+  7 resolved compatibly (vite 7.3.2 -> 7.3.6, postcss -> 8.5.28,
+  esbuild -> 0.28.2, nanoid -> 3.3.18, browserslist -> 4.28.9, plus babel
+  bumps) and dropped the stale `@tauri-apps/plugin-opener` /
+  `plugin-dialog` entries from the lockfile. Lockfile-only change.
+- `react`/`react-dom` 19.2.5 -> 19.2.8 via `npm update` (inside `^19.1.0`):
+  picks up the CVE-2026-23870 fix (19.2.6). Not directly exploitable here —
+  it affects `react-server-dom-*` (Server Components), which is absent from
+  our tree (Tauri desktop app, no server) — but a trivial compatible patch,
+  so applied. `tsc` clean, 210/210 vitest pass.
+- Deferred: `@vitest/mocker` moderate path-traversal (GHSA-82fw-gwwq-j7x9) —
+  fix requires vitest 5.0.0 (breaking major); test-only dev dependency with
+  no production attack surface. Revisit when vitest 5 stabilises.
+- `sysinfo` stays 0.30.13 (latest 0.30.x, no RustSec advisory against the
+  `sysinfo` crate affecting process listing; `cargo-audit` binary absent
+  locally so the RustSec check rides on CI per `.github/workflows/audit.yml`).
+  The 0.31+ process-API migration rationale above still holds — overturn only
+  with an advisory or a dedicated migration change.
+- `d3` stays 7.9.0 (latest v7; no Snyk-tracked vuln). The open
+  `d3-interpolate` regex-ReDoS report is unpatched upstream and inapplicable:
+  `PortTopology.tsx` uses force-simulation/zoom/select only, on local scan
+  data, with no untrusted strings through number-interpolation or color
+  parsing, and no network vector in the desktop webview.
+
 ## Triage rules
 
 1. `cargo audit` / `npm audit` critical or high with a fix available → patch PR
