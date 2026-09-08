@@ -15,6 +15,7 @@ export interface UsePortPalDataResult {
   observedAt: Record<number, number>;
   lastScanAt: number | null;
   loading: boolean;
+  eventsLoading: boolean;
   errors: ResourceErrors;
   toast: string | null;
   refreshPorts(): Promise<void>;
@@ -49,11 +50,18 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
   const [observedAt, setObservedAt] = useState<Record<number, number>>({});
   const [lastScanAt, setLastScanAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [eventsLoading, setEventsLoading] = useState(true);
   const [errors, setErrors] = useState<ResourceErrors>({ ports: null, events: null, traffic: null });
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingKills = useRef(new Set<number>());
 
+  // Latest-wins, single slot: a second failure replaces the first message and
+  // restarts the one timer. Queueing would make the user wait out stale news
+  // about an action they already know failed, and a burst of failures usually
+  // shares one cause, so the newest message is the useful one. Anything that
+  // must survive being replaced belongs in a page error state with a retry,
+  // not here.
   const showToast = useCallback((message: string) => {
     setToast(message);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -81,6 +89,8 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
       setErrors((current) => ({ ...current, events: null }));
     } catch (error) {
       setErrors((current) => ({ ...current, events: errorMessage(error) }));
+    } finally {
+      setEventsLoading(false);
     }
   }, [gateway]);
 
@@ -106,7 +116,26 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
     let unlistenDegraded: (() => void) | undefined;
     let unlistenRecovered: (() => void) | undefined;
 
-    void gateway.onPortsUpdated((updatedPorts) => {
+    // A subscription that never attaches cannot be retried per resource: the
+    // stream simply never arrives, and refreshing that resource would not
+    // reattach it. There is no retry affordance to offer, so the failure goes
+    // out as a toast instead of an error state with a Retry that cannot help.
+    const subscribe = (
+      setup: Promise<() => void>,
+      attach: (unlisten: () => void) => void,
+      stream: string,
+    ) => {
+      void setup
+        .then((unlisten) => {
+          if (active) attach(unlisten);
+          else unlisten();
+        })
+        .catch((error) => {
+          if (active) showToast(`Live ${stream} unavailable: ${errorMessage(error)}`);
+        });
+    };
+
+    subscribe(gateway.onPortsUpdated((updatedPorts) => {
       setPorts(updatedPorts);
       setLoading(false);
       setLastScanAt(Date.now());
@@ -124,38 +153,26 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
         return next;
       });
       void refreshTraffic();
-    }).then((unlisten) => {
-      if (active) unlistenPorts = unlisten;
-      else unlisten();
-    });
+    }), (unlisten) => { unlistenPorts = unlisten; }, 'port updates');
 
-    void gateway.onPortEvents((updatedEvents) => {
+    subscribe(gateway.onPortEvents((updatedEvents) => {
       setEvents((current) => [...updatedEvents, ...current].slice(0, 200));
       setObservedAt((current) => ({ ...current, ...observedStarts(updatedEvents) }));
-    }).then((unlisten) => {
-      if (active) unlistenEvents = unlisten;
-      else unlisten();
-    });
+    }), (unlisten) => { unlistenEvents = unlisten; }, 'port events');
 
     // The scanner cannot report a failed scan as an empty list, so a break in
     // scanning would otherwise leave the last successful rows on screen
     // indefinitely. Surface it as a ports error: the rows are no longer
     // trustworthy, and the page offers a retry.
-    void gateway.onScanDegraded((scanError) => {
+    subscribe(gateway.onScanDegraded((scanError) => {
       setLoading(false);
       setErrors((current) => ({ ...current, ports: scanError.message }));
-    }).then((unlisten) => {
-      if (active) unlistenDegraded = unlisten;
-      else unlisten();
-    });
+    }), (unlisten) => { unlistenDegraded = unlisten; }, 'scan health');
 
-    void gateway.onScanRecovered(() => {
+    subscribe(gateway.onScanRecovered(() => {
       setErrors((current) => ({ ...current, ports: null }));
       void refreshPorts();
-    }).then((unlisten) => {
-      if (active) unlistenRecovered = unlisten;
-      else unlisten();
-    });
+    }), (unlisten) => { unlistenRecovered = unlisten; }, 'scan recovery');
 
     return () => {
       active = false;
@@ -166,7 +183,7 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
       unlistenDegraded?.();
       unlistenRecovered?.();
     };
-  }, [gateway, refreshEvents, refreshPorts, refreshTraffic]);
+  }, [gateway, refreshEvents, refreshPorts, refreshTraffic, showToast]);
 
   const killPort = useCallback(async (port: PortInfo): Promise<KillOutcome> => {
     if (pendingKills.current.has(port.pid)) return 'busy';
@@ -211,7 +228,7 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
         return next;
       });
     } catch (error) {
-      showToast(`Failed to restart: ${error}`);
+      showToast(`Failed to restart ${port.project_name ?? port.process_name}: ${errorMessage(error)}`);
     } finally {
       setRestarting((current) => {
         const next = new Set(current);
@@ -231,6 +248,7 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
     observedAt,
     lastScanAt,
     loading,
+    eventsLoading,
     errors,
     toast,
     refreshPorts,

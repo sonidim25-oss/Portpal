@@ -2,14 +2,27 @@ import { useMemo } from 'react';
 import type { PortInfo, TrafficByPort } from '../../app/types';
 import { Sparkline } from '../../components/ui/Sparkline';
 import { groupPortsByService, portEndpointKey } from '../../utils/helpers';
+import { ErrorNotice } from '../ErrorNotice';
+import { LoadingState } from '../../components/ui/controls';
 
-export function ServicesPage({ ports, traffic }: { ports: PortInfo[]; traffic: TrafficByPort }) {
+interface ServicesPageProps {
+  ports: PortInfo[];
+  traffic: TrafficByPort;
+  loading: boolean;
+  /// The grouping is derived entirely from a scan, so a failed scan must not
+  /// be presented as "no services running".
+  error: string | null;
+  onRetry(): void;
+}
+
+export function ServicesPage({ ports, traffic, loading, error, onRetry }: ServicesPageProps) {
   const groups = useMemo(() => groupPortsByService(ports), [ports]);
 
   return (
     <div className="secondary-page secondary-column-page">
       <header className="secondary-heading"><h2>Services</h2><p>{groups.length} service{groups.length === 1 ? '' : 's'} running across {ports.length} port{ports.length === 1 ? '' : 's'}</p></header>
-      {groups.length === 0 ? <div className="secondary-empty"><strong>No services running</strong><span>Start a server to see it here</span></div> : (
+      {error && <ErrorNotice message={error} retryLabel="Retry services" onRetry={onRetry} />}
+      {groups.length === 0 && error ? null : groups.length === 0 && loading ? <LoadingState label="Scanning services…" /> : groups.length === 0 ? <div className="secondary-empty"><strong>No services running</strong><span>Start a server to see it here</span></div> : (
         <div className="secondary-services-grid">
           {groups.map((group) => {
             const total = group.ports.reduce((sum, port) => {

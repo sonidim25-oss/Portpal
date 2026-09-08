@@ -186,4 +186,45 @@ describe('App integration - invoke + ports', () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText(/No ports in use/)).toBeInTheDocument());
   });
+  it('surfaces a failed port scan with a working retry instead of an empty list', async () => {
+    const user = userEvent.setup();
+    let scanWorks = false;
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === 'get_ports') return scanWorks ? Promise.resolve(mockPorts) : Promise.reject(new Error('`netstat` was not found on PATH'));
+      if (cmd === 'get_port_events') return Promise.resolve([]);
+      if (cmd === 'get_port_traffic') return Promise.resolve({});
+      return Promise.resolve([]);
+    });
+    render(<App />);
+
+    // A backend failure must never read as "nothing is listening".
+    await waitFor(() => expect(screen.getByText('Unable to load ports')).toBeInTheDocument());
+    expect(screen.getByText('`netstat` was not found on PATH')).toBeInTheDocument();
+    expect(screen.queryByText(/No ports in use/)).not.toBeInTheDocument();
+
+    scanWorks = true;
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
+    expect(screen.queryByText('Unable to load ports')).not.toBeInTheDocument();
+  });
+
+  it('reports the same failure on the pages that only derive from a scan', async () => {
+    const user = userEvent.setup();
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === 'get_ports') return Promise.reject(new Error('scan unavailable'));
+      if (cmd === 'get_port_events') return Promise.resolve([]);
+      if (cmd === 'get_port_traffic') return Promise.resolve({});
+      return Promise.resolve([]);
+    });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('Unable to load ports')).toBeInTheDocument());
+
+    for (const [navigation, retry] of [
+      ['Traffic', 'Retry traffic'], ['Services', 'Retry services'], ['Dashboard', 'Retry dashboard'],
+    ] as const) {
+      await user.click(screen.getByRole('button', { name: navigation }));
+      expect(screen.getByRole('alert')).toHaveTextContent('scan unavailable');
+      expect(screen.getByRole('button', { name: retry })).toBeInTheDocument();
+    }
+  });
 });

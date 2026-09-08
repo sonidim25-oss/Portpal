@@ -1,15 +1,20 @@
 import type { PortInfo, TrafficByPort } from '../../app/types';
+import { LoadingState } from '../../components/ui/controls';
 import { Sparkline } from '../../components/ui/Sparkline';
 import { DEV_PORTS, getServiceName, getServiceSecondary, portEndpointKey } from '../../utils/helpers';
+import { ErrorNotice } from '../ErrorNotice';
 
 interface TrafficPageProps {
   ports: PortInfo[];
   traffic: TrafficByPort;
+  loading: boolean;
+  /// Whichever failure explains what this page is showing: a traffic error
+  /// makes the numbers stale, a port error makes the rows themselves stale.
   error: string | null;
   onRetry(): void;
 }
 
-export function TrafficPage({ ports, traffic, error, onRetry }: TrafficPageProps) {
+export function TrafficPage({ ports, traffic, loading, error, onRetry }: TrafficPageProps) {
   const total = Object.values(traffic).reduce((sum, samples) => sum + (samples[samples.length - 1]?.connections ?? 0), 0);
   const peak = Object.values(traffic).reduce((sum, samples) => sum + Math.max(0, ...samples.map((sample) => sample.connections)), 0);
 
@@ -22,7 +27,9 @@ export function TrafficPage({ ports, traffic, error, onRetry }: TrafficPageProps
         <Summary label="Current Connections" value={total} />
         <Summary label="Peak (Session)" value={peak} />
       </div>
-      {ports.length === 0 ? <Empty title="No active ports" detail="Start a server to see traffic" /> : (
+      {/* Loading, empty, and failed are three different answers: only claim
+          there is nothing listening once a scan has actually come back. */}
+      {ports.length === 0 && error ? null : ports.length === 0 && loading ? <LoadingState label="Reading traffic…" /> : ports.length === 0 ? <Empty title="No active ports" detail="Start a server to see traffic" /> : (
         <div className="secondary-list secondary-scroll-list" role="list">
           {ports.map((port) => {
             const samples = traffic[port.port] ?? [];
@@ -60,10 +67,6 @@ function Summary({ label, value }: { label: string; value: number }) {
 
 function Metric({ value, label }: { value: number; label: string }) {
   return <span><strong>{value}</strong> <small>{label}</small></span>;
-}
-
-function ErrorNotice({ message, retryLabel, onRetry }: { message: string; retryLabel: string; onRetry(): void }) {
-  return <div className="secondary-error" role="alert"><span>{message}</span><button onClick={onRetry} aria-label={retryLabel}>Retry</button></div>;
 }
 
 function Empty({ title, detail }: { title: string; detail: string }) {

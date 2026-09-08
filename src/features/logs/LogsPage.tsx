@@ -1,16 +1,20 @@
 import type { PortEvent } from '../../app/types';
+import { LoadingState } from '../../components/ui/controls';
+import { ErrorNotice } from '../ErrorNotice';
 
-interface LogsPageProps { events: PortEvent[]; error: string | null; onRefresh(): void }
+interface LogsPageProps { events: PortEvent[]; loading: boolean; error: string | null; onRefresh(): void }
 
-export function LogsPage({ events, error, onRefresh }: LogsPageProps) {
+export function LogsPage({ events, loading, error, onRefresh }: LogsPageProps) {
   return (
     <div className="secondary-page secondary-column-page">
       <header className="secondary-heading secondary-heading-actions">
         <div><h2>Event Logs</h2><p>{events.length} event{events.length === 1 ? '' : 's'} recorded</p></div>
         <button className="secondary-action" onClick={onRefresh} aria-label="Refresh logs">Refresh</button>
       </header>
-      {error && <div className="secondary-error" role="alert"><span>{error}</span><button onClick={onRefresh} aria-label="Retry logs">Retry</button></div>}
-      {events.length === 0 ? <div className="secondary-empty"><strong>No events yet</strong><span>Port start and stop events will appear here</span></div> : (
+      {error && <ErrorNotice message={error} retryLabel="Retry logs" onRetry={onRefresh} />}
+      {/* An empty log and an unread log are different claims: only say there
+          is nothing recorded once a read has actually come back. */}
+      {events.length === 0 && error ? null : events.length === 0 && loading ? <LoadingState label="Reading events…" /> : events.length === 0 ? <div className="secondary-empty"><strong>No events yet</strong><span>Port start and stop events will appear here</span></div> : (
         <div className="secondary-list secondary-scroll-list">
           {events.map((event, index) => (
             <div key={`${event.timestamp}-${index}`} className="secondary-log-row">

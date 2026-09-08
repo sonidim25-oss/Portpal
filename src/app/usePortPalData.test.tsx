@@ -223,4 +223,99 @@ describe('usePortPalData', () => {
 
     expect(gateway.getPortTraffic).toHaveBeenCalledTimes(2);
   });
+  it('keeps one toast slot: a second failure replaces the first and reuses the timer', async () => {
+    vi.useFakeTimers();
+    const gateway = createGateway({
+      killProcess: vi.fn()
+        .mockRejectedValueOnce({ message: 'first failure' })
+        .mockRejectedValueOnce({ message: 'second failure' }),
+    });
+    const { result, unmount } = renderHook(() => usePortPalData(gateway));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+    // Two failures in quick succession: the newer message wins outright, and
+    // the older one never reappears once the single timer expires.
+    await act(async () => { await result.current.killPort(port); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(result.current.toast).toContain('first failure');
+    await act(async () => { await result.current.killPort({ ...port, pid: 4321 }); });
+    expect(result.current.toast).toContain('second failure');
+
+    // The first toast's remaining 2s must not clear the second one early.
+    await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+    expect(result.current.toast).toContain('second failure');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(result.current.toast).toBeNull();
+
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('leaves no toast timer or polling timer running after unmount', async () => {
+    vi.useFakeTimers();
+    const gateway = createGateway({ killProcess: vi.fn().mockRejectedValue(new Error('nope')) });
+    const { result, unmount } = renderHook(() => usePortPalData(gateway));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await result.current.killPort(port); });
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    unmount();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('toasts when a live subscription cannot be attached at all', async () => {
+    // No per-resource retry can reattach a stream, so this failure has to be
+    // reported directly rather than parked in a page error state.
+    const gateway = createGateway({
+      onPortsUpdated: vi.fn().mockRejectedValue(new Error('event channel closed')),
+    });
+    const { result } = renderHook(() => usePortPalData(gateway));
+
+    await waitFor(() => expect(result.current.toast).toContain('event channel closed'));
+    expect(result.current.toast).toContain('Live port updates unavailable');
+  });
+
+  it('reports a readable restart failure instead of a stringified object', async () => {
+    const gateway = createGateway({
+      restartProcess: vi.fn().mockRejectedValue({ code: 'spawn_failed', message: 'working directory is gone' }),
+    });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => { await result.current.restartPort(port); });
+
+    expect(result.current.toast).toContain('working directory is gone');
+    expect(result.current.toast).not.toContain('[object Object]');
+    expect(result.current.restarting.size).toBe(0);
+  });
+
+  it('reports a failed rescan rather than silently keeping the previous rows, and clears it on retry', async () => {
+    const getPorts = vi.fn()
+      .mockResolvedValueOnce([port])
+      .mockRejectedValueOnce(new Error('scan failed'))
+      .mockResolvedValueOnce([port]);
+    const gateway = createGateway({ getPorts });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.ports).toEqual([port]));
+    const firstScanAt = result.current.lastScanAt;
+
+    await act(async () => { await result.current.refreshPorts(); });
+    // The rows survive in state, but they are flagged: the page renders the
+    // error instead of the table, and the scan time is not moved forward.
+    expect(result.current.errors.ports).toBe('scan failed');
+    expect(result.current.lastScanAt).toBe(firstScanAt);
+
+    await act(async () => { await result.current.refreshPorts(); });
+    expect(result.current.errors.ports).toBeNull();
+  });
+
+  it('reports each resource as loaded only once its own call comes back', async () => {
+    const gateway = createGateway({ getPortEvents: vi.fn().mockRejectedValue(new Error('events unavailable')) });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    expect(result.current.eventsLoading).toBe(true);
+
+    await waitFor(() => expect(result.current.eventsLoading).toBe(false));
+    expect(result.current.errors.events).toBe('events unavailable');
+  });
 });

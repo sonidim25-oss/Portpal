@@ -1,15 +1,20 @@
 import type { NavPage, PortEvent, PortInfo, TrafficByPort } from '../../app/types';
 import { Sparkline } from '../../components/ui/Sparkline';
 import { DEV_PORTS, getServiceName, getServiceSecondary, portEndpointKey, timeAgo } from '../../utils/helpers';
+import { ErrorNotice } from '../ErrorNotice';
 
 interface DashboardPageProps {
   ports: PortInfo[];
   events: PortEvent[];
   traffic: TrafficByPort;
+  /// Every tile here is derived from a backend call, so a failed call would
+  /// otherwise read as a confident zero. Retry refreshes all three sources.
+  error: string | null;
+  onRetry(): void;
   onNavigate(page: NavPage): void;
 }
 
-export function DashboardPage({ ports, events, traffic, onNavigate }: DashboardPageProps) {
+export function DashboardPage({ ports, events, traffic, error, onRetry, onNavigate }: DashboardPageProps) {
   const frameworks = new Set(ports.map((port) => DEV_PORTS[port.port]?.label).filter(Boolean));
   const connections = Object.values(traffic).reduce((total, samples) => total + (samples[samples.length - 1]?.connections ?? 0), 0);
   const eventsToday = events.filter((event) => Date.now() - event.timestamp < 86_400_000).length;
@@ -17,6 +22,7 @@ export function DashboardPage({ ports, events, traffic, onNavigate }: DashboardP
   return (
     <div className="secondary-page secondary-dashboard">
       <PageHeading title="Dashboard" description="Overview of your port activity" />
+      {error && <ErrorNotice message={error} retryLabel="Retry dashboard" onRetry={onRetry} />}
       <div className="secondary-summary-grid">
         <Summary label="Active Ports" value={ports.length} onClick={() => onNavigate('ports')} />
         <Summary label="Frameworks" value={frameworks.size} />

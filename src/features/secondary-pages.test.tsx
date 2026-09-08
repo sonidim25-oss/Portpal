@@ -29,7 +29,7 @@ describe('secondary pages', () => {
   it('preserves dashboard summaries and navigation actions', async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();
-    render(<DashboardPage ports={ports} events={events} traffic={traffic} onNavigate={onNavigate} />);
+    render(<DashboardPage ports={ports} events={events} traffic={traffic} error={null} onRetry={vi.fn()} onNavigate={onNavigate} />);
 
     expect(screen.getByText('Active Ports').previousElementSibling).toHaveTextContent('3');
     expect(screen.getByText('Frameworks').previousElementSibling).toHaveTextContent('2');
@@ -45,7 +45,7 @@ describe('secondary pages', () => {
   it('preserves traffic totals, per-port metrics, and stale rows alongside retry', async () => {
     const user = userEvent.setup();
     const onRetry = vi.fn();
-    render(<TrafficPage ports={ports} traffic={traffic} error="traffic unavailable" onRetry={onRetry} />);
+    render(<TrafficPage ports={ports} traffic={traffic} loading={false} error="traffic unavailable" onRetry={onRetry} />);
 
     expect(screen.getByText('Current Connections').previousElementSibling).toHaveTextContent('10');
     expect(screen.getByText('Peak (Session)').previousElementSibling).toHaveTextContent('12');
@@ -60,7 +60,7 @@ describe('secondary pages', () => {
   });
 
   it('preserves service grouping and aggregate connection counts', () => {
-    render(<ServicesPage ports={ports} traffic={traffic} />);
+    render(<ServicesPage ports={ports} traffic={traffic} loading={false} error={null} onRetry={vi.fn()} />);
 
     expect(screen.getByText('2 services running across 3 ports')).toBeInTheDocument();
     const shop = screen.getByRole('article', { name: 'shop service' });
@@ -80,13 +80,13 @@ describe('secondary pages', () => {
       const conflictTraffic: TrafficByPort = { 3000: [{ connections: 2, timestamp: 1 }] };
       const onNavigate = vi.fn();
 
-      const { unmount } = render(<DashboardPage ports={conflict} events={[]} traffic={conflictTraffic} onNavigate={onNavigate} />);
+      const { unmount } = render(<DashboardPage ports={conflict} events={[]} traffic={conflictTraffic} error={null} onRetry={vi.fn()} onNavigate={onNavigate} />);
       expect(screen.getAllByText(':3000')).toHaveLength(2);
       expect(screen.getByText('shop')).toBeInTheDocument();
       expect(screen.getByText('shop-2')).toBeInTheDocument();
       unmount();
 
-      render(<TrafficPage ports={conflict} traffic={conflictTraffic} error={null} onRetry={vi.fn()} />);
+      render(<TrafficPage ports={conflict} traffic={conflictTraffic} loading={false} error={null} onRetry={vi.fn()} />);
       expect(screen.getAllByRole('listitem', { name: /port 3000 traffic/i })).toHaveLength(2);
 
       expect(errors.flat().join(' ').toLowerCase()).not.toContain('unique "key"');
@@ -100,7 +100,7 @@ describe('secondary pages', () => {
       { port: 5432, pid: 103, process_name: 'postgres', project_name: 'myapp', project_path: '/work/myapp', protocol: 'TCP', start_cmd: null },
     ];
     const pgTraffic: TrafficByPort = { 5432: [{ connections: 1, timestamp: 1 }] };
-    render(<DashboardPage ports={pg} events={[]} traffic={pgTraffic} onNavigate={vi.fn()} />);
+    render(<DashboardPage ports={pg} events={[]} traffic={pgTraffic} error={null} onRetry={vi.fn()} onNavigate={vi.fn()} />);
 
     expect(screen.getByText('Postgres Server')).toBeInTheDocument();
     expect(screen.getByText('myapp')).toBeInTheDocument();
@@ -111,7 +111,7 @@ describe('secondary pages', () => {
       { port: 3000, pid: 101, process_name: 'node', project_name: 'Postgres', project_path: '/work/postgres-demo', protocol: 'TCP', start_cmd: 'npm run dev' },
       { port: 5432, pid: 103, process_name: 'postgres', project_name: null, project_path: null, protocol: 'TCP', start_cmd: null },
     ];
-    render(<ServicesPage ports={tricky} traffic={{}} />);
+    render(<ServicesPage ports={tricky} traffic={{}} loading={false} error={null} onRetry={vi.fn()} />);
 
     expect(screen.getByText('2 services running across 2 ports')).toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Postgres :3000 service' })).toBeInTheDocument();
@@ -121,7 +121,7 @@ describe('secondary pages', () => {
   it('preserves log event rows and refresh while retaining stale events on error', async () => {
     const user = userEvent.setup();
     const onRefresh = vi.fn();
-    render(<LogsPage events={events} error="events unavailable" onRefresh={onRefresh} />);
+    render(<LogsPage events={events} loading={false} error="events unavailable" onRefresh={onRefresh} />);
 
     expect(screen.getByText('2 events recorded')).toBeInTheDocument();
     expect(screen.getByText(':3000')).toBeInTheDocument();
@@ -142,5 +142,57 @@ describe('secondary pages', () => {
     await user.click(screen.getByRole('button', { name: 'Large' }));
     await user.click(screen.getByRole('button', { name: 'Larger' }));
     expect(onFontScale.mock.calls).toEqual([[1.15], [1.3]]);
+  });
+  it('reports a failed load on every derived page instead of an empty result', async () => {
+    // Dashboard and Services derive everything from a scan, so a failed scan
+    // would otherwise render as a confident "nothing is running".
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+
+    const dashboard = render(<DashboardPage ports={[]} events={[]} traffic={{}} error="ports unavailable" onRetry={onRetry} onNavigate={vi.fn()} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('ports unavailable');
+    await user.click(screen.getByRole('button', { name: 'Retry dashboard' }));
+    dashboard.unmount();
+
+    const services = render(<ServicesPage ports={[]} traffic={{}} loading={false} error="ports unavailable" onRetry={onRetry} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('ports unavailable');
+    expect(screen.queryByText('No services running')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retry services' }));
+    services.unmount();
+
+    const traffic = render(<TrafficPage ports={[]} traffic={{}} loading={false} error="ports unavailable" onRetry={onRetry} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('ports unavailable');
+    expect(screen.queryByText('No active ports')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retry traffic' }));
+    traffic.unmount();
+
+    render(<LogsPage events={[]} loading={false} error="events unavailable" onRefresh={onRetry} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('events unavailable');
+    expect(screen.queryByText('No events yet')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retry logs' }));
+
+    expect(onRetry).toHaveBeenCalledTimes(4);
+  });
+
+  it('separates still-loading from confirmed-empty on the derived pages', () => {
+    const services = render(<ServicesPage ports={[]} traffic={{}} loading error={null} onRetry={vi.fn()} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Scanning services…');
+    expect(screen.queryByText('No services running')).not.toBeInTheDocument();
+    services.unmount();
+
+    const traffic = render(<TrafficPage ports={[]} traffic={{}} loading error={null} onRetry={vi.fn()} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Reading traffic…');
+    expect(screen.queryByText('No active ports')).not.toBeInTheDocument();
+    traffic.unmount();
+
+    const logs = render(<LogsPage events={[]} loading error={null} onRefresh={vi.fn()} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Reading events…');
+    expect(screen.queryByText('No events yet')).not.toBeInTheDocument();
+    logs.unmount();
+
+    // Once a load has come back empty, the pages say so plainly.
+    render(<TrafficPage ports={[]} traffic={{}} loading={false} error={null} onRetry={vi.fn()} />);
+    expect(screen.getByText('No active ports')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

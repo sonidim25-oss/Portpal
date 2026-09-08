@@ -28,9 +28,16 @@ export default function App() {
   const [fontScale, setFontScale] = useState(loadFontScale);
   const {
     ports, events, traffic, killedPorts, killing, restarting, observedAt,
-    lastScanAt, loading, errors, toast, refreshPorts, refreshEvents,
+    lastScanAt, loading, eventsLoading, errors, toast, refreshPorts, refreshEvents,
     refreshTraffic, killPort, restartPort,
   } = usePortPalData();
+
+  // Pages that only derive from backend data still have to report the failure
+  // behind what they are showing, or a failed scan reads as a confident zero.
+  // Each page reports the first failure among the sources it renders, and its
+  // retry refreshes exactly those sources.
+  const refreshPortsAndTraffic = () => { void refreshPorts(); void refreshTraffic(); };
+  const refreshEverything = () => { refreshPortsAndTraffic(); void refreshEvents(); };
 
   useEffect(() => {
     document.documentElement.style.setProperty('--fs-scale', String(fontScale));
@@ -40,16 +47,17 @@ export default function App() {
   return (
     <>
       <AppShell page={page} onNavigate={setPage} ports={ports} lastScanAt={lastScanAt}>
-        {page === 'dashboard' && <DashboardPage ports={ports} events={events} traffic={traffic} onNavigate={setPage} />}
+        {page === 'dashboard' && <DashboardPage ports={ports} events={events} traffic={traffic} error={errors.ports ?? errors.events ?? errors.traffic} onRetry={refreshEverything} onNavigate={setPage} />}
         {page === 'ports' && <PortsPage ports={ports} traffic={traffic} observedAt={observedAt} killedPorts={killedPorts} killing={killing} restarting={restarting} loading={loading} error={errors.ports} onRetry={refreshPorts} onKill={killPort} onRestart={restartPort} onOpenMap={() => setPage('map')} />}
-        {page === 'traffic' && <TrafficPage ports={ports} traffic={traffic} error={errors.traffic} onRetry={refreshTraffic} />}
+        {page === 'traffic' && <TrafficPage ports={ports} traffic={traffic} loading={loading} error={errors.traffic ?? errors.ports} onRetry={refreshPortsAndTraffic} />}
         {/* MVP: Port Map hidden - code preserved, route disabled */}
         {/* {page === 'map' && <PortMapPage ports={ports} traffic={traffic} observedAt={observedAt} killedPorts={killedPorts} killing={killing} restarting={restarting} onKill={killPort} onRestart={restartPort} onClose={() => setPage('ports')} />} */}
-        {page === 'services' && <ServicesPage ports={ports} traffic={traffic} />}
-        {page === 'logs' && <LogsPage events={events} error={errors.events} onRefresh={refreshEvents} />}
+        {page === 'services' && <ServicesPage ports={ports} traffic={traffic} loading={loading} error={errors.ports ?? errors.traffic} onRetry={refreshPortsAndTraffic} />}
+        {page === 'logs' && <LogsPage events={events} loading={eventsLoading} error={errors.events} onRefresh={refreshEvents} />}
         {page === 'settings' && <SettingsPage fontScale={fontScale} onFontScale={setFontScale} />}
       </AppShell>
-      {toast && <div className="toast">{toast}</div>}
+      {/* Single slot, latest-wins: see showToast in usePortPalData. */}
+      {toast && <div className="toast" role="status">{toast}</div>}
     </>
   );
 }
