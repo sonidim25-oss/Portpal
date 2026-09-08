@@ -5,32 +5,64 @@ mod logger;
 
 use std::collections::HashMap;
 
+/// Runs blocking work on the async runtime's blocking pool.
+///
+/// `Err` is returned only when the worker itself could not complete (the pool
+/// rejected the job or the closure panicked), which is distinct from the work
+/// returning its own error.
+async fn run_off_thread<T, F>(work: F) -> Result<T, String>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("background worker failed: {e}"))
+}
+
+// Every command below runs its work through `spawn_blocking` on an `async fn`.
+// A plain sync command body is invoked inline on the thread that dispatches
+// IPC, so a scan or a kill would stall the webview and queue every other
+// command behind it. `async fn` hands the work to the async runtime, and
+// `spawn_blocking` keeps genuinely blocking calls off the runtime's worker
+// threads so concurrent lifecycle operations cannot starve it.
+
 #[tauri::command]
-fn get_ports() -> Result<Vec<scanner::PortInfo>, scanner::ScanError> {
-    scanner::try_scan_ports()
+async fn get_ports() -> Result<Vec<scanner::PortInfo>, scanner::ScanError> {
+    run_off_thread(scanner::try_scan_ports)
+        .await
+        .unwrap_or_else(|e| Err(scanner::ScanError::worker_failed(e)))
 }
 
 #[tauri::command]
-fn kill_process(pid: u32) -> Result<(), scanner::KillError> {
-    scanner::kill_pid(pid)
+async fn kill_process(pid: u32) -> Result<(), scanner::KillError> {
+    run_off_thread(move || scanner::kill_pid(pid))
+        .await
+        .unwrap_or_else(|e| Err(scanner::KillError::new("worker_failed", e)))
 }
 
 /// Restarts a scanned process. Takes only a port and a pid: the command line
 /// and working directory come from the backend's trusted store, never from the
 /// webview.
 #[tauri::command]
-fn restart_process(port: u16, pid: u32) -> Result<(), String> {
-    scanner::restart_trusted(port, pid)
+async fn restart_process(port: u16, pid: u32) -> Result<(), String> {
+    run_off_thread(move || scanner::restart_trusted(port, pid))
+        .await
+        .unwrap_or_else(Err)
 }
 
 #[tauri::command]
-fn get_port_graph() -> Result<connections::PortGraph, scanner::ScanError> {
-    let ports = scanner::try_scan_ports()?;
-    let listening: Vec<(u16, u32, String, Option<String>)> = ports
-        .iter()
-        .map(|p| (p.port, p.pid, p.process_name.clone(), p.project_name.clone()))
-        .collect();
-    Ok(connections::get_port_graph(&listening))
+async fn get_port_graph() -> Result<connections::PortGraph, scanner::ScanError> {
+    run_off_thread(|| {
+        let ports = scanner::try_scan_ports()?;
+        let listening: Vec<(u16, u32, String, Option<String>)> = ports
+            .iter()
+            .map(|p| (p.port, p.pid, p.process_name.clone(), p.project_name.clone()))
+            .collect();
+        Ok(connections::get_port_graph(&listening))
+    })
+    .await
+    .unwrap_or_else(|e| Err(scanner::ScanError::worker_failed(e)))
 }
 
 #[tauri::command]

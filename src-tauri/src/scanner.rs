@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 use sysinfo::System;
 
 #[derive(Serialize, Clone)]
@@ -33,6 +34,12 @@ pub struct ScanError {
 impl ScanError {
     fn new(code: &'static str, tool: &'static str, message: impl Into<String>) -> Self {
         Self { code, tool, message: message.into() }
+    }
+
+    /// The scan never ran because the background worker itself failed, which
+    /// is a different failure from the scan tool being unusable.
+    pub(crate) fn worker_failed(message: impl Into<String>) -> Self {
+        Self::new("worker_failed", "", message)
     }
 }
 
@@ -118,7 +125,7 @@ pub struct KillError {
 }
 
 impl KillError {
-    fn new(code: &'static str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: &'static str, message: impl Into<String>) -> Self {
         Self { code, message: message.into() }
     }
 }
@@ -358,6 +365,44 @@ fn get_project_path_unix_fallback(pid: u32) -> Option<String> {
     }
 }
 
+/// How long a process gets to exit on its own after SIGTERM before SIGKILL.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+const SIGTERM_GRACE: Duration = Duration::from_secs(2);
+
+/// How long to wait for a killed process to release its socket before the
+/// replacement is spawned; binding again too early fails with EADDRINUSE.
+const RESTART_SETTLE: Duration = Duration::from_millis(800);
+
+/// Polling interval for the waits above. Short enough that the common case —
+/// a dev server that exits almost immediately — is not billed the full grace
+/// period, long enough not to spin.
+const EXIT_POLL_INTERVAL: Duration = Duration::from_millis(25);
+
+/// Waits up to `timeout` for `finished` to report true.
+///
+/// Replaces the fixed sleeps these paths used to take. The old code always
+/// paid the entire grace period even when the process was gone in
+/// milliseconds, which is what made kill feel like a hang and made Kill All
+/// take the grace period once per process.
+fn wait_until(timeout: Duration, mut finished: impl FnMut() -> bool) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if finished() {
+            return true;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        std::thread::sleep(EXIT_POLL_INTERVAL.min(remaining));
+    }
+}
+
+/// Cheap liveness probe suitable for polling in a loop, unlike a full scan.
+fn process_has_exited(sys: &mut System, pid: u32) -> bool {
+    !sys.refresh_process(sysinfo::Pid::from(pid as usize))
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn kill_unix(pid: u32) -> Result<(), String> {
     let mut sys = System::new();
@@ -367,9 +412,11 @@ fn kill_unix(pid: u32) -> Result<(), String> {
     if unsafe { libc::kill(pid as i32, libc::SIGTERM) } != 0 {
         return Err(std::io::Error::last_os_error().to_string());
     }
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    // Return as soon as the process is actually gone. Escalation still happens
+    // only after the full grace period has elapsed without an exit.
+    let exited = wait_until(SIGTERM_GRACE, || !process_exists_unix(pid));
 
-    if process_exists_unix(pid) {
+    if !exited {
         // Never send the delayed SIGKILL to a process that reused the PID.
         sys.refresh_processes();
         if sys.process(sysinfo::Pid::from(pid as usize)).map(|p| p.start_time()) != Some(identity) {
@@ -670,7 +717,12 @@ pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
             return Err(format!("pid {} no longer listens on port {}", pid, port));
         }
         kill_pid(pid).map_err(|e| e.message)?;
-        std::thread::sleep(std::time::Duration::from_millis(800));
+        // Wait for the old process to actually disappear instead of assuming a
+        // fixed delay covers it. Behaviour on timeout is unchanged: the
+        // replacement is still spawned, so this only ever returns sooner than
+        // the previous unconditional 800ms sleep.
+        let mut probe = System::new();
+        wait_until(RESTART_SETTLE, || process_has_exited(&mut probe, pid));
     }
 
     spawn_trusted(&record)
@@ -708,6 +760,33 @@ mod tests {
     fn listener(pid: u32, port: u16, name: &str) -> PortInfo {
         PortInfo { pid, port, process_name: name.into(), project_path: None,
             project_name: None, protocol: "TCP".into(), start_cmd: None }
+    }
+
+    #[test]
+    fn wait_until_returns_immediately_when_already_finished() {
+        // The regression this guards: the old code paid the full grace period
+        // even when the process was already gone.
+        let started = Instant::now();
+        assert!(wait_until(Duration::from_secs(30), || true));
+        assert!(started.elapsed() < Duration::from_millis(100), "waited {:?}", started.elapsed());
+    }
+
+    #[test]
+    fn wait_until_returns_soon_after_the_condition_flips() {
+        let deadline = Instant::now() + Duration::from_millis(120);
+        let started = Instant::now();
+        // Finishes far short of the timeout, so the call must too.
+        assert!(wait_until(Duration::from_secs(30), || Instant::now() >= deadline));
+        assert!(started.elapsed() < Duration::from_secs(1), "waited {:?}", started.elapsed());
+    }
+
+    #[test]
+    fn wait_until_gives_up_after_the_timeout() {
+        let started = Instant::now();
+        assert!(!wait_until(Duration::from_millis(100), || false));
+        // It waited the budget rather than returning early or hanging.
+        assert!(started.elapsed() >= Duration::from_millis(100));
+        assert!(started.elapsed() < Duration::from_secs(5), "waited {:?}", started.elapsed());
     }
 
     #[test]
@@ -1140,4 +1219,5 @@ mod tests {
         assert_eq!(seen.len(), 3);
     }
 }
+
 
