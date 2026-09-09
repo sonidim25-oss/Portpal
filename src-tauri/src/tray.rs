@@ -46,12 +46,16 @@ fn lock_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 fn compute_state(ports: &[PortInfo]) -> TrafficState {
-
-    // Check for conflict: same port bound twice
-    let mut seen = std::collections::HashSet::new();
+    // Multiple PIDs are normal for SO_REUSEPORT and master/worker servers.
+    // Only different process identities indicate a real conflict.
+    let mut seen: std::collections::HashMap<u16, (&str, Option<&str>)> = std::collections::HashMap::new();
     for p in ports {
-        if !seen.insert(p.port) {
-            return TrafficState::Conflict;
+        if let Some((process_name, project_path)) = seen.get(&p.port) {
+            if *process_name != p.process_name.as_str() || *project_path != p.project_path.as_deref() {
+                return TrafficState::Conflict;
+            }
+        } else {
+            seen.insert(p.port, (&p.process_name, p.project_path.as_deref()));
         }
     }
 
@@ -173,10 +177,10 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             // and the graph input, so listing and connection stages can never
             // disagree about what is live.
             {
-                let port_tuples: Vec<(u16, u32, String, Option<String>)> = ports.iter()
+                let port_tuples: Vec<(u16, u32, String, Option<String>, Option<String>)> = ports.iter()
                     .map(|p| {
                         let fw = crate::taxonomy::get_framework_name(p.port);
-                        (p.port, p.pid, p.process_name.clone(), fw)
+                        (p.port, p.pid, p.process_name.clone(), fw, p.project_path.clone())
                     })
                     .collect();
 
@@ -287,11 +291,23 @@ mod tests {
 
     #[test]
     fn conflict_when_duplicate_port() {
-        let ports = vec![p(3000), p(3000)];
+        let ports = vec![p(3000), PortInfo { pid: 2, ..p(3000) }];
+        assert_eq!(compute_state(&ports), TrafficState::Active);
+
+        let ports = vec![p(3000), PortInfo { pid: 2, process_name: "other".into(), ..p(3000) }];
         assert_eq!(compute_state(&ports), TrafficState::Conflict);
         // Conflict takes precedence over Active
-        let ports2 = vec![p(3000), p(5173), p(3000)];
+        let ports2 = vec![p(3000), p(5173), PortInfo { pid: 2, process_name: "other".into(), ..p(3000) }];
         assert_eq!(compute_state(&ports2), TrafficState::Conflict);
+    }
+
+    #[test]
+    fn same_process_name_with_different_projects_is_a_conflict() {
+        let ports = vec![
+            PortInfo { project_path: Some("C:/one".into()), ..p(3000) },
+            PortInfo { pid: 2, project_path: Some("C:/two".into()), ..p(3000) },
+        ];
+        assert_eq!(compute_state(&ports), TrafficState::Conflict);
     }
 
     #[test]

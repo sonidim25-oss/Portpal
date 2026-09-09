@@ -59,7 +59,7 @@ pub type EndpointKey = (u16, u32);
 /// Global store for port events and traffic
 pub struct PortLogger {
     events: Vec<PortEvent>,
-    prev_ports: HashMap<EndpointKey, (String, Option<String>)>, // (port,pid) -> (process_name, framework)
+    prev_ports: HashMap<EndpointKey, (String, Option<String>, Option<String>)>, // (port,pid) -> (process_name, framework, project_path)
     traffic: HashMap<EndpointKey, PortTraffic>,
     first_seen: HashMap<EndpointKey, u64>,
     /// Ports observed with >1 live PID on the last tick (for conflict edges).
@@ -82,23 +82,23 @@ impl PortLogger {
     /// `conn_counts` is keyed by port (aggregated across conflicting PIDs).
     pub fn update(
         &mut self,
-        ports: &[(u16, u32, String, Option<String>)],
+        ports: &[(u16, u32, String, Option<String>, Option<String>)],
         conn_counts: &HashMap<u16, usize>,
     ) -> Vec<PortEvent> {
         let ts = now_millis();
         let mut new_events = Vec::new();
 
         // Build current endpoint set keyed by (port, pid)
-        let mut current: HashMap<EndpointKey, (String, Option<String>)> = HashMap::new();
-        let mut port_to_pids: HashMap<u16, Vec<u32>> = HashMap::new();
-        for (port, pid, name, fw) in ports {
-            current.insert((*port, *pid), (name.clone(), fw.clone()));
-            port_to_pids.entry(*port).or_default().push(*pid);
+        let mut current: HashMap<EndpointKey, (String, Option<String>, Option<String>)> = HashMap::new();
+        let mut port_to_endpoints: HashMap<u16, Vec<(String, Option<String>)>> = HashMap::new();
+        for (port, pid, name, fw, project_path) in ports {
+            current.insert((*port, *pid), (name.clone(), fw.clone(), project_path.clone()));
+            port_to_endpoints.entry(*port).or_default().push((name.clone(), project_path.clone()));
         }
 
         // Detect new endpoints (started) — PID rotation on the same port is a
         // new endpoint, so it correctly emits `started` instead of going silent.
-        for ((port, pid), (name, fw)) in &current {
+        for ((port, pid), (name, fw, _)) in &current {
             if !self.prev_ports.contains_key(&(*port, *pid)) {
                 let event = PortEvent {
                     port: *port,
@@ -115,7 +115,7 @@ impl PortLogger {
         }
 
         // Detect removed endpoints (stopped)
-        for ((port, pid), (name, _)) in &self.prev_ports {
+        for ((port, pid), (name, _, _)) in &self.prev_ports {
             if !current.contains_key(&(*port, *pid)) {
                 let event = PortEvent {
                     port: *port,
@@ -130,16 +130,18 @@ impl PortLogger {
             }
         }
 
-        // Detect conflicts: same port with >1 live PID
+        // Detect conflicts only when same-port listeners have different
+        // process identities. Multiple PIDs with the same name and project
+        // are a normal worker group.
         let mut new_conflicts = std::collections::HashSet::new();
-        for (port, pids) in &port_to_pids {
-            if pids.len() > 1 {
+        for (port, endpoints) in &port_to_endpoints {
+            if endpoints.len() > 1 && endpoints.windows(2).any(|pair| pair[0] != pair[1]) {
                 new_conflicts.insert(*port);
                 if !self.conflicts.contains(port) {
                     // One conflict event per port (pid = lowest for stability)
-                    let pid = *pids.iter().min().unwrap_or(&0);
+                    let pid = current.keys().filter(|(p, _)| p == port).map(|(_, pid)| *pid).min().unwrap_or(0);
                     let name = current.get(&(*port, pid))
-                        .map(|(n, _)| n.clone()).unwrap_or_default();
+                        .map(|(n, _, _)| n.clone()).unwrap_or_default();
                     let event = PortEvent {
                         port: *port,
                         pid,
@@ -275,8 +277,8 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    fn mk_ports(ports: &[(u16, u32, &str)]) -> Vec<(u16, u32, String, Option<String>)> {
-        ports.iter().map(|(p, pid, name)| (*p, *pid, name.to_string(), None)).collect()
+    fn mk_ports(ports: &[(u16, u32, &str)]) -> Vec<(u16, u32, String, Option<String>, Option<String>)> {
+        ports.iter().map(|(p, pid, name)| (*p, *pid, name.to_string(), None, None)).collect()
     }
 
     #[test]
@@ -367,6 +369,27 @@ mod tests {
             &mk_ports(&[(3000, 111, "a"), (3000, 222, "b")]),
             &HashMap::new(),
         );
+        assert!(ev.iter().any(|e| e.event_type == "conflict" && e.port == 3000));
+    }
+
+    #[test]
+    fn same_process_workers_do_not_emit_conflict_event() {
+        let mut lg = PortLogger::new();
+        let ev = lg.update(
+            &mk_ports(&[(3000, 111, "node"), (3000, 222, "node")]),
+            &HashMap::new(),
+        );
+        assert!(!ev.iter().any(|e| e.event_type == "conflict"));
+    }
+
+    #[test]
+    fn same_process_name_in_different_projects_emits_conflict_event() {
+        let mut lg = PortLogger::new();
+        let ports = vec![
+            (3000, 111, "node".into(), None, Some("/one".into())),
+            (3000, 222, "node".into(), None, Some("/two".into())),
+        ];
+        let ev = lg.update(&ports, &HashMap::new());
         assert!(ev.iter().any(|e| e.event_type == "conflict" && e.port == 3000));
     }
 
