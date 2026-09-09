@@ -331,6 +331,23 @@ describe("PortsPage", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Killed 1, failed 0, skipped critical 1, skipped busy 1");
   });
 
+  it("discloses sibling ports hidden by the filter in the Kill All confirmation", async () => {
+    const user = userEvent.setup();
+    const sibling = { ...devPort, port: 3001 };
+    renderPorts({ ports: [devPort, sibling, otherPort] });
+
+    await user.type(screen.getByRole("searchbox", { name: "Search ports" }), "3000");
+    expect(screen.getByText("3000")).toBeVisible();
+    expect(screen.queryByText("3001")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Kill All" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm process termination" });
+    expect(within(dialog).getByText(/1 unique process selected/)).toBeVisible();
+    expect(within(dialog).getByText("2 ports total")).toBeVisible();
+    expect(within(dialog).getByText("Also affected (hidden by current filter):")).toBeVisible();
+    expect(within(dialog).getByText(/:3001/)).toBeVisible();
+  });
+
   it("routes critical kills directly to onKill without confirm dialog and keeps keyboard focus inside confirmation", async () => {
     const user = userEvent.setup();
     const { onKill } = renderPorts();
