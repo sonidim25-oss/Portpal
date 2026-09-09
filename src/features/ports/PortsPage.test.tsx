@@ -312,6 +312,20 @@ describe("PortsPage", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
+  it("discloses that the kill does not reach child processes", async () => {
+    // The kill is per-process by design (docs/kill-policy.md). The dialog has to
+    // say so: "the port is free" and "the port may still be held by a child" are
+    // different outcomes, and the user is the one choosing to accept the second.
+    const user = userEvent.setup();
+    renderPorts();
+
+    await user.click(screen.getByRole("button", { name: "Kill port 3000" }));
+
+    const dialog = screen.getByRole("alertdialog", { name: "Confirm process termination" });
+    expect(within(dialog).getByText(/Only the selected process is stopped/)).toBeVisible();
+    expect(within(dialog).getByText(/hold the port open or restart the service/)).toBeVisible();
+  });
+
   it("names protected Postgres, cancels safely, and deduplicates confirmed PIDs", async () => {
     const user = userEvent.setup();
     const postgres = { ...systemPort, port: 5432, process_name: "Postgres" };

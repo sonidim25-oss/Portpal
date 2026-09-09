@@ -13,6 +13,19 @@ use std::process::{Child, Command};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use sysinfo::System;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ACCESS_DENIED, HANDLE, WAIT_OBJECT_0};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Threading::{
+    OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_TERMINATE,
+};
+
+/// `SYNCHRONIZE` (0x0010_0000) is a standard access right, but `windows-sys`
+/// only re-exports it typed as a file access right, so it is spelled out here
+/// rather than imported from `Storage::FileSystem` where it would read as a file
+/// flag at the call site.
+#[cfg(target_os = "windows")]
+const SYNCHRONIZE: u32 = 0x0010_0000;
 
 #[derive(Serialize, Clone)]
 pub struct PortInfo {
@@ -267,18 +280,29 @@ pub fn kill_pid(pid: u32) -> Result<(), KillError> {
     if is_reserved_pid(pid) || pid > i32::MAX as u32 {
         return Err(KillError::new("invalid_pid", "Reserved or invalid process ID"));
     }
+    // Claim the process before anything below observes it; see `KillTarget`.
+    let target = KillTarget::acquire(pid);
     // A scan that did not run cannot clear a kill: without a port list the
     // critical-process guard has nothing to check against, so fail closed with
     // the real reason instead of the misleading "not observed".
     let ports = try_scan_ports()
         .map_err(|e| KillError::new("scan_failed", format!("Cannot verify what PID {pid} is listening on: {e}")))?;
-    kill_pid_with(pid, &ports)
+    kill_pid_with(pid, &ports, target)
 }
 
 /// Kills a process after the caller has already captured a successful scan.
 /// Keeping the snapshot at the operation boundary avoids rescanning the same
 /// listener set when restart first verifies and then terminates a process.
-fn kill_pid_with(pid: u32, ports: &[PortInfo]) -> Result<(), KillError> {
+///
+/// `target` must have been acquired *before* that scan — see [`KillTarget`].
+/// Taking it as an argument rather than claiming it here is what keeps that
+/// ordering true for both callers: this function cannot know what its caller
+/// already observed.
+fn kill_pid_with(pid: u32, ports: &[PortInfo], target: KillTarget) -> Result<(), KillError> {
+    // Unix has nothing to claim (see `KillTarget`); the parameter is still taken
+    // so both platforms keep one shape and one ordering rule.
+    #[cfg(not(target_os = "windows"))]
+    let _ = &target;
     // Host configuration can add protection, never remove the defaults. No
     // override is exposed through the PID-only webview command.
     let additional = std::env::var("PORTPAL_CRITICAL_PORTS").unwrap_or_default()
@@ -293,7 +317,7 @@ fn kill_pid_with(pid: u32, ports: &[PortInfo]) -> Result<(), KillError> {
     }
 
     #[cfg(target_os = "windows")]
-    return kill_windows(pid).map_err(|e| KillError::new("os_error", e));
+    return target.handle?.stop().map_err(|e| KillError::new("os_error", e));
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     return kill_unix(pid).map_err(|e| KillError::new("os_error", e));
@@ -369,16 +393,172 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortI
     Ok(ports)
 }
 
-#[cfg(target_os = "windows")]
-fn kill_windows(pid: u32) -> Result<(), String> {
-    let executable = resolve_external_tool("taskkill").map_err(|e| e.to_string())?;
-    let output = Command::new(executable)
-        .args(["/PID", &pid.to_string(), "/F"])
-        .output()
-        .map_err(|e| e.to_string())?;
+/// The process a kill has claimed, acquired before anything observes it.
+///
+/// On Windows it carries the open handle that pins the PID (see
+/// [`ProcessHandle`]); on Unix there is nothing equivalent to hold, so it
+/// carries nothing and exists only to keep one shape for both platforms.
+///
+/// Acquiring it is deliberately the *first* thing a kill does, ahead of the scan
+/// that validates the process: on Windows that ordering is what makes "the
+/// process we validated" and "the process we terminated" the same process. A
+/// handle opened afterwards would pin nothing that mattered.
+struct KillTarget {
+    #[cfg(target_os = "windows")]
+    handle: Result<ProcessHandle, KillError>,
+}
 
-    if output.status.success() { Ok(()) }
-    else { Err(String::from_utf8_lossy(&output.stderr).to_string()) }
+impl KillTarget {
+    fn acquire(pid: u32) -> Self {
+        #[cfg(target_os = "windows")]
+        // The failure is carried, not returned: PortPal's own policy outranks
+        // it. A protected service cannot be opened with PROCESS_TERMINATE
+        // either, and answering that with "run as administrator" would invite
+        // the user to elevate and retry a kill the policy refuses outright. It
+        // surfaces only after `validate_kill` has had its say, and nothing is
+        // terminated in between.
+        return Self { handle: ProcessHandle::open(pid) };
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            // The PID is all the platform offers; `kill_unix` re-checks process
+            // start time before the escalation instead. Closing the initial
+            // signal's race needs pidfds, which macOS has no equivalent for.
+            let _ = pid;
+            Self {}
+        }
+    }
+}
+
+/// An open handle to the process PortPal is about to stop.
+///
+/// # Why a handle instead of a PID
+///
+/// The kill path used to validate a process and then shell out to
+/// `taskkill /PID n /F`, which re-checks nothing: between the check and the
+/// terminate the process could exit and Windows could hand the number to
+/// something else, and the wrong process got force-killed. Windows keeps a
+/// process ID reserved for as long as any handle to that process object is open,
+/// so holding this handle pins the identity. `kill_pid` opens it *before* the
+/// validating scan, which is the part that matters — every step after that acts
+/// on one fixed process rather than on whatever owns the number by then.
+///
+/// # Scope: this process, not its descendants
+///
+/// Deliberately no `/T`-equivalent tree walk. The listener PortPal showed is the
+/// process holding the port and the process the user selected; a tree kill would
+/// reach processes that were never on screen — a blast radius the UI cannot
+/// honestly show and the Unix path does not share. The cost is real and is
+/// disclosed in the confirmation dialog: a child that inherited the listening
+/// socket can keep the port bound, and a supervisor child can restart the
+/// listener. See docs/kill-policy.md.
+#[cfg(target_os = "windows")]
+struct ProcessHandle {
+    handle: HANDLE,
+    pid: u32,
+}
+
+#[cfg(target_os = "windows")]
+impl ProcessHandle {
+    /// PROCESS_TERMINATE to stop it, SYNCHRONIZE to wait for it — nothing more.
+    /// The handle never reads the process, so it does not ask for the right to.
+    fn open(pid: u32) -> Result<Self, KillError> {
+        // SAFETY: a well-formed kernel32 call. The returned handle is checked
+        // for null below and closed exactly once, in `Drop`.
+        let handle = unsafe { OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, 0, pid) };
+        if handle.is_null() {
+            let error = io::Error::last_os_error();
+            // Access denied is a different user problem from a vanished process:
+            // one means "run PortPal elevated", the other means "rescan".
+            return Err(if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) {
+                KillError::new(
+                    "access_denied",
+                    format!("PID {pid} cannot be stopped by this user. Run PortPal as administrator to manage it."),
+                )
+            } else {
+                KillError::new(
+                    "not_observed",
+                    format!("PID {pid} is no longer running; rescan and try again"),
+                )
+            });
+        }
+        Ok(Self { handle, pid })
+    }
+
+    /// Asks the process to close, waits the shared grace period, then forces it.
+    ///
+    /// The mirror of `kill_unix`'s SIGTERM → wait → SIGKILL, which is the point:
+    /// Windows is where PortPal is used most, and it was the platform that only
+    /// ever force-killed while the dialog warned about unsaved data.
+    fn stop(&self) -> Result<(), String> {
+        // `taskkill` without `/F` posts WM_CLOSE to the process's own top-level
+        // windows — a real graceful stop for anything with a window, and safe to
+        // address by PID because this handle has pinned it.
+        //
+        // A windowless console server has no window to post to, and `taskkill`
+        // reports that by failing; that is the signal to stop waiting and force
+        // it. The obvious alternative, AttachConsole + GenerateConsoleCtrlEvent,
+        // is deliberately not used: a console control event reaches every
+        // process sharing that console, including the shell the user started the
+        // server from, which widens the blast radius the way `/T` would.
+        if self.request_close() && self.wait_for_exit(GRACEFUL_STOP_GRACE) {
+            return Ok(());
+        }
+        self.terminate()
+    }
+
+    /// Posts WM_CLOSE through `taskkill` (no `/F`). True when Windows accepted
+    /// it, which also means there was a window to accept it.
+    fn request_close(&self) -> bool {
+        let Ok(executable) = resolve_external_tool("taskkill") else { return false };
+        Command::new(executable)
+            .args(["/PID", &self.pid.to_string()])
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    }
+
+    /// True if the process has exited within `timeout`.
+    fn wait_for_exit(&self, timeout: Duration) -> bool {
+        let millis = u32::try_from(timeout.as_millis()).unwrap_or(u32::MAX);
+        // SAFETY: `self.handle` is a live handle opened with SYNCHRONIZE.
+        // Waiting on the process object returns the instant it exits, and cannot
+        // be fooled by PID reuse the way a PID poll could.
+        unsafe { WaitForSingleObject(self.handle, millis) == WAIT_OBJECT_0 }
+    }
+
+    /// Forces the process and returns only once it has actually exited.
+    ///
+    /// `TerminateProcess` merely *initiates* termination, so its success is not
+    /// an exit: returning there would report "killed" while the process was
+    /// still dying, and the UI would show a STOPPED row for a port that is still
+    /// bound. The wait is what makes the claim true.
+    ///
+    /// It also collapses the already-exited case. `TerminateProcess` fails with
+    /// access-denied on a process that has already terminated, which is not a
+    /// failed kill — the wait below succeeds and the error is discarded.
+    fn terminate(&self) -> Result<(), String> {
+        // SAFETY: `self.handle` is a live handle opened with PROCESS_TERMINATE.
+        let initiated = unsafe { TerminateProcess(self.handle, 1) } != 0;
+        let error = (!initiated).then(io::Error::last_os_error);
+        if self.wait_for_exit(GRACEFUL_STOP_GRACE) {
+            return Ok(());
+        }
+        Err(match error {
+            Some(error) => error.to_string(),
+            None => format!("PID {} was terminated but has not exited yet", self.pid),
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for ProcessHandle {
+    fn drop(&mut self) {
+        // Closing the handle is what releases the PID reservation, so it happens
+        // only once the kill has been decided, never earlier.
+        // SAFETY: closing a handle this type owns, exactly once.
+        unsafe { CloseHandle(self.handle) };
+    }
 }
 
 // ─── macOS + Linux (shared lsof path) ────────────────────────────────────────
@@ -559,9 +739,11 @@ fn parse_lsof_cwd_records(stdout: &str) -> HashMap<u32, PathBuf> {
     out
 }
 
-/// How long a process gets to exit on its own after SIGTERM before SIGKILL.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-const SIGTERM_GRACE: Duration = Duration::from_secs(2);
+/// How long a process gets to exit on its own after being asked to stop, before
+/// PortPal forces it: SIGTERM then SIGKILL on Unix, WM_CLOSE then
+/// `TerminateProcess` on Windows. One constant, so the grace a user is promised
+/// cannot drift between the two platforms.
+const GRACEFUL_STOP_GRACE: Duration = Duration::from_secs(2);
 
 /// How long to wait for a killed process to release its socket before the
 /// replacement is spawned; binding again too early fails with EADDRINUSE.
@@ -608,7 +790,7 @@ fn kill_unix(pid: u32) -> Result<(), String> {
     }
     // Return as soon as the process is actually gone. Escalation still happens
     // only after the full grace period has elapsed without an exit.
-    let exited = wait_until(SIGTERM_GRACE, || !process_exists_unix(pid));
+    let exited = wait_until(GRACEFUL_STOP_GRACE, || !process_exists_unix(pid));
 
     if !exited {
         // Never send the delayed SIGKILL to a process that reused the PID.
@@ -996,6 +1178,13 @@ pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
     // against the filesystem before anything is executed.
     validate_launch_record(&record)?;
 
+    // Claimed here, before the process is looked at at all, for the same reason
+    // `kill_pid` claims it first: every check below — the recorded command line,
+    // the listener scan, `kill_pid_with`'s policy — then describes the process
+    // this will terminate. Harmless when the process is already gone: the kill
+    // branch is skipped and the claim is dropped unused.
+    let target = KillTarget::acquire(pid);
+
     // If the process is still alive it must be the same process we recorded —
     // otherwise the pid was reused and killing it would hit a bystander.
     let mut sys = System::new();
@@ -1023,7 +1212,7 @@ pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
             }
         }
 
-        kill_pid_with(pid, &ports).map_err(|e| e.message)?;
+        kill_pid_with(pid, &ports, target).map_err(|e| e.message)?;
         // Wait for the old process to actually disappear instead of assuming a
         // fixed delay covers it. Behaviour on timeout is unchanged: the
         // replacement is still spawned, so this only ever returns sooner than
@@ -1151,6 +1340,140 @@ mod tests {
         let (tool, args): (&str, &[&str]) = ("sh", &["-c", "echo portpal"]);
 
         assert!(run_scan_tool(tool, args).unwrap().contains("portpal"));
+    }
+
+    // ─── Windows kill path ───────────────────────────────────────────────
+    //
+    // These drive real processes this test spawns itself, never a process found
+    // on the machine: the policy guards are unit-tested above, and a live
+    // destructive check against a system service is not acceptable verification
+    // (see docs/kill-policy.md).
+
+    /// A child that stays alive until the test stops it. `pause` blocks on a
+    /// stdin nothing ever writes, so no sleep tool and no network are involved.
+    #[cfg(target_os = "windows")]
+    fn spawn_blocked_child() -> std::process::Child {
+        Command::new("cmd")
+            .args(["/C", "pause"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn test child")
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_policy_outranks_a_handle_that_cannot_be_opened() {
+        // PID 4 is the Windows System process: a PROCESS_TERMINATE handle for it
+        // can never be opened. The user must be told it is protected, not
+        // invited to relaunch PortPal as administrator and try again — which is
+        // what surfacing the handle failure first would have said.
+        let error = kill_pid(4).unwrap_err();
+        assert_ne!(error.code, "access_denied", "{}", error.message);
+        assert!(
+            matches!(error.code, "critical_process" | "not_observed"),
+            "{}: {}",
+            error.code,
+            error.message
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_open_rejects_a_pid_that_is_not_running() {
+        // Windows PIDs are multiples of four and allocated from the low end of
+        // the range, so this one is not a live process on any real machine.
+        let error = match ProcessHandle::open(0x7FFF_FFF0) {
+            Ok(_) => panic!("opened a handle to a pid that should not exist"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, "not_observed", "{}", error.message);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_stop_ends_the_process_without_paying_the_grace_period() {
+        let mut child = spawn_blocked_child();
+        let pid = child.id();
+        let handle = ProcessHandle::open(pid).expect("open own child");
+
+        let started = Instant::now();
+        handle.stop().expect("stop the child");
+        let elapsed = started.elapsed();
+
+        // Gone, by the kernel's account rather than by a PID lookup.
+        assert!(handle.wait_for_exit(Duration::ZERO), "child outlived stop()");
+        // Whichever branch ran — WM_CLOSE accepted and honoured, or straight to
+        // force because there was no window — the caller is not billed the full
+        // grace period for a process that is already gone.
+        assert!(
+            elapsed < GRACEFUL_STOP_GRACE,
+            "stop() took {elapsed:?}, the whole grace period"
+        );
+        let _ = child.wait();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_graceful_close_precedes_the_force() {
+        // The regression: Windows only ever force-killed, while the confirmation
+        // dialog warned about unsaved data. `stop()` must ask first — and when
+        // asking is impossible (a windowless console server, which is most dev
+        // servers) it must say so by falling through to the force immediately,
+        // not by waiting out a grace period nothing can answer.
+        let mut child = spawn_blocked_child();
+        let handle = ProcessHandle::open(child.id()).expect("open own child");
+
+        let asked = handle.request_close();
+        if asked {
+            // Windows accepted the WM_CLOSE, so the grace period is meaningful.
+            assert!(
+                handle.wait_for_exit(GRACEFUL_STOP_GRACE),
+                "taskkill reported success but the process never closed"
+            );
+        } else {
+            // Nothing to post to: the process must still be running, which is
+            // what makes the immediate escalation in `stop()` correct.
+            assert!(!handle.wait_for_exit(Duration::from_millis(200)));
+            handle.terminate().expect("force the child");
+        }
+        assert!(handle.wait_for_exit(Duration::from_secs(5)));
+        let _ = child.wait();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_handle_pins_the_pid_against_reuse() {
+        // The TOCTOU fix rests on one documented Windows guarantee: a PID stays
+        // reserved while a handle to that process is open. Observable proof: the
+        // PID still resolves after the process has exited, because it is still
+        // this process object and cannot have been handed to another.
+        let mut child = spawn_blocked_child();
+        let pid = child.id();
+        let pinning = ProcessHandle::open(pid).expect("open own child");
+        pinning.terminate().expect("terminate the child");
+        assert!(pinning.wait_for_exit(Duration::from_secs(5)));
+        let _ = child.wait();
+
+        // Still openable, still the same dead process, because `pinning` lives.
+        let second = ProcessHandle::open(pid).expect("pid was released while a handle was open");
+        assert!(second.wait_for_exit(Duration::ZERO), "pid now names a live process");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_terminate_succeeds_on_a_process_that_already_exited() {
+        // `TerminateProcess` fails with access-denied on an already-terminated
+        // process. That is not a failed kill: the port is free, so the caller
+        // must not see an error.
+        let mut child = spawn_blocked_child();
+        let handle = ProcessHandle::open(child.id()).expect("open own child");
+        handle.terminate().expect("first terminate");
+        assert!(handle.wait_for_exit(Duration::from_secs(5)));
+
+        handle.terminate().expect("terminating an exited process is success");
+        let _ = child.wait();
     }
 
     #[test]
