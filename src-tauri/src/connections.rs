@@ -4,7 +4,7 @@
 use crate::netaddr::parse_port;
 #[cfg(target_os = "windows")]
 use crate::netaddr::parse_netstat_tcp_row;
-use crate::scanner::is_unattributed_pid;
+use crate::scanner::{is_unattributed_pid, resolve_external_tool};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
@@ -253,7 +253,8 @@ fn get_active_connections() -> Vec<Connection> {
 #[cfg(target_os = "windows")]
 fn get_connections_windows() -> Vec<Connection> {
     // Use netstat -ano to get all ESTABLISHED connections with PIDs
-    let output = match Command::new("netstat").args(["-ano"]).output() {
+    let output = match resolve_external_tool("netstat")
+        .and_then(|executable| Command::new(executable).args(["-ano"]).output()) {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -305,9 +306,10 @@ fn get_connections_windows() -> Vec<Connection> {
 #[cfg(target_os = "macos")]
 fn get_connections_macos() -> Vec<Connection> {
     // `-iTCP -sTCP:ESTABLISHED` keeps this TCP-only by construction.
-    let output = match Command::new("lsof")
+    let output = match resolve_external_tool("lsof")
+        .and_then(|executable| Command::new(executable)
         .args(["-iTCP", "-sTCP:ESTABLISHED", "-n", "-P"])
-        .output() {
+        .output()) {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -347,9 +349,10 @@ fn get_connections_macos() -> Vec<Connection> {
 fn get_connections_linux() -> Vec<Connection> {
     // `-t` keeps this TCP-only; `ss -u` would list UDP sockets that have no
     // established state to report.
-    let output = match Command::new("ss")
+    let output = match resolve_external_tool("ss")
+        .and_then(|executable| Command::new(executable)
         .args(["-tnp", "state", "established"])
-        .output() {
+        .output()) {
         Ok(o) => o,
         Err(_) => return vec![],
     };

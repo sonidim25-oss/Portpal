@@ -6,6 +6,7 @@ use crate::netaddr::parse_port;
 use crate::netaddr::parse_netstat_tcp_row;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::{LazyLock, Mutex};
@@ -58,6 +59,62 @@ impl std::fmt::Display for ScanError {
     }
 }
 
+/// Resolves an OS utility to a stable, trusted path before spawning it.
+/// Windows utilities are pinned to System32. Unix uses conventional system
+/// locations first and validates PATH fallbacks before accepting them.
+pub(crate) fn resolve_external_tool(tool: &'static str) -> io::Result<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let root = std::env::var_os("SystemRoot")
+            .or_else(|| std::env::var_os("WINDIR"))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "SystemRoot is not set"))?;
+        let candidate = PathBuf::from(root).join("System32").join(format!("{tool}.exe"));
+        return if is_safe_external_tool_path(&candidate) {
+            candidate.canonicalize()
+        } else {
+            Err(io::Error::new(io::ErrorKind::NotFound, format!("{tool} is unavailable")))
+        };
+    }
+
+    #[cfg(unix)]
+    {
+        let system_candidates: &[&str] = match tool {
+            "lsof" => &["/usr/sbin/lsof", "/usr/bin/lsof"],
+            "ss" => &["/usr/bin/ss", "/usr/sbin/ss"],
+            _ => &[],
+        };
+        for candidate in system_candidates.iter().map(Path::new) {
+            if is_safe_external_tool_path(candidate) {
+                return candidate.canonicalize();
+            }
+        }
+        if let Some(path) = std::env::var_os("PATH") {
+            for directory in std::env::split_paths(&path) {
+                let candidate = directory.join(tool);
+                if is_safe_external_tool_path(&candidate) {
+                    return candidate.canonicalize();
+                }
+            }
+        }
+        Err(io::Error::new(io::ErrorKind::NotFound, format!("{tool} is unavailable")))
+    }
+}
+
+fn is_safe_external_tool_path(path: &Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else { return false };
+    if !metadata.is_file() { return false; }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(parent) = path.parent().and_then(|p| p.canonicalize().ok()) else { return false };
+        let Ok(parent_metadata) = std::fs::metadata(parent) else { return false };
+        let mode = metadata.permissions().mode() | parent_metadata.permissions().mode();
+        mode & 0o022 == 0
+    }
+    #[cfg(not(unix))]
+    { true }
+}
+
 /// Runs a port-listing tool and returns its stdout.
 ///
 /// Every failure is reported as a typed error rather than a panic: a missing
@@ -65,7 +122,7 @@ impl std::fmt::Display for ScanError {
 /// that must degrade to a visible warning, never terminate the app or the
 /// background tray thread.
 fn run_scan_tool(tool: &'static str, args: &[&str]) -> Result<String, ScanError> {
-    let output = Command::new(tool).args(args).output().map_err(|e| {
+    let executable = resolve_external_tool(tool).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             ScanError::new(
                 "tool_missing",
@@ -79,6 +136,10 @@ fn run_scan_tool(tool: &'static str, args: &[&str]) -> Result<String, ScanError>
                 format!("`{tool}` could not be started: {e}. It may be blocked by sandboxing or permissions."),
             )
         }
+    })?;
+    let output = Command::new(executable).args(args).output().map_err(|e| {
+        ScanError::new("tool_failed", tool,
+            format!("`{tool}` could not be started: {e}. It may be blocked by sandboxing or permissions."))
     })?;
 
     // A tool that ran but failed leaves stdout empty. Reporting that as "no
@@ -306,7 +367,8 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortI
 
 #[cfg(target_os = "windows")]
 fn kill_windows(pid: u32) -> Result<(), String> {
-    let output = Command::new("taskkill")
+    let executable = resolve_external_tool("taskkill").map_err(|e| e.to_string())?;
+    let output = Command::new(executable)
         .args(["/PID", &pid.to_string(), "/F"])
         .output()
         .map_err(|e| e.to_string())?;
@@ -446,9 +508,9 @@ fn resolve_cwds(pids: &[u32]) -> HashMap<u32, PathBuf> {
     {
         // `-p` takes a comma-separated set, so the whole scan is one spawn.
         let list = pids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
-        match Command::new("lsof")
+        match resolve_external_tool("lsof").and_then(|executable| Command::new(executable)
             .args(["-p", &list, "-a", "-d", "cwd", "-Fpn"])
-            .output()
+            .output())
         {
             // A non-zero exit still prints the pids it could read, and lsof
             // exits non-zero whenever any pid was unreadable, so stdout is
@@ -1048,6 +1110,19 @@ mod tests {
         assert_eq!(error.code, "tool_missing");
         assert_eq!(error.tool, "portpal-no-such-tool-exists");
         assert!(error.message.contains("not found on PATH"), "{}", error.message);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn path_fallback_rejects_user_writable_tool_locations() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let tool = dir.path().join("netstat");
+        fs::write(&tool, "fake").unwrap();
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(!is_safe_external_tool_path(&tool));
     }
 
     #[test]
