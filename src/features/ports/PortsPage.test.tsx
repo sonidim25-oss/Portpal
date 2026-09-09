@@ -182,6 +182,48 @@ describe("PortsPage", () => {
     await waitFor(() => expect(screen.queryByRole("complementary")).not.toBeInTheDocument());
   });
 
+  it("applies the active search to STOPPED rows", async () => {
+    const user = userEvent.setup();
+    renderPorts({ killedPorts: new Map([[stoppedPort.port, stoppedPort]]) });
+    const searchbox = screen.getByRole("searchbox", { name: "Search ports" });
+
+    expect(screen.getByText("STOPPED")).toBeVisible();
+
+    await user.type(searchbox, "lsass");
+    await waitFor(() => expect(screen.queryByText("STOPPED")).not.toBeInTheDocument());
+
+    await user.clear(searchbox);
+    await user.type(searchbox, "vite");
+    await waitFor(() => expect(screen.getByText("STOPPED")).toBeVisible());
+  });
+
+  it("applies the active category and advanced filters to STOPPED rows", async () => {
+    const user = userEvent.setup();
+    renderPorts({ killedPorts: new Map([[stoppedPort.port, stoppedPort]]) });
+
+    await user.click(screen.getByRole("button", { name: "System 1" }));
+    expect(screen.queryByText("STOPPED")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "All 3" }));
+    expect(screen.getByText("STOPPED")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Protocol" }), "UDP");
+    await waitFor(() => expect(screen.queryByText("STOPPED")).not.toBeInTheDocument());
+  });
+
+  it("closes a selected stopped inspector when search hides its row", async () => {
+    const user = userEvent.setup();
+    renderPorts({ killedPorts: new Map([[stoppedPort.port, stoppedPort]]) });
+
+    await user.click(screen.getByRole("row", { name: /5173.*Stopped.*vite/i }));
+    expect(screen.getByRole("complementary", { name: "Port inspector for :5173" })).toBeVisible();
+
+    await user.type(screen.getByRole("searchbox", { name: "Search ports" }), "lsass");
+
+    await waitFor(() => expect(screen.queryByRole("complementary")).not.toBeInTheDocument());
+  });
+
   it("keeps individual Kill and conditional Restart actions directly reachable with original ports", async () => {
     const user = userEvent.setup();
     const { onKill, onRestart } = renderPorts({ killedPorts: new Map([[stoppedPort.port, stoppedPort]]) });

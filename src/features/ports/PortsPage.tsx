@@ -103,9 +103,17 @@ export function PortsPage({
     () => filterPorts(ports, search, category, advanced, traffic),
     [advanced, category, ports, search, traffic],
   );
+  // STOPPED rows obey the same search/filters as live rows. Their connection
+  // count renders as "—", so they are filtered with empty traffic rather than
+  // the stale pre-kill samples still keyed under their port number.
+  const filteredKilledPorts = useMemo(() => {
+    if (killedPorts.size === 0) return killedPorts;
+    const visible = new Set(filterPorts([...killedPorts.values()], search, category, advanced, {}));
+    return new Map([...killedPorts].filter(([, port]) => visible.has(port)));
+  }, [advanced, category, killedPorts, search]);
   const selectedLivePort = selected ? filteredPorts.find((port) => samePort(port, selected)) : undefined;
   const selectedKilledPort = selected
-    ? [...killedPorts.values()].find((port) => samePort(port, selected))
+    ? [...filteredKilledPorts.values()].find((port) => samePort(port, selected))
     : undefined;
   const selectedPort = selectedLivePort ?? selectedKilledPort;
 
@@ -181,7 +189,7 @@ export function PortsPage({
               ports={filteredPorts}
               traffic={traffic}
               observedAt={observedAt}
-              killedPorts={killedPorts}
+              killedPorts={filteredKilledPorts}
               killing={killing}
               restarting={restarting}
               selected={selected}
