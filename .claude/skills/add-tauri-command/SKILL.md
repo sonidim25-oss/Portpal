@@ -1,52 +1,110 @@
 ---
 name: add-tauri-command
-description: Add a new Tauri IPC command to PortPal end to end — Rust implementation, registration in BOTH main.rs and lib.rs, capability permissions, and the frontend invoke() call. Use whenever a new #[tauri::command] is being added or an existing one is renamed or removed.
+description: Use when adding, renaming, or removing a Tauri IPC command in PortPal across Rust registration, the typed frontend gateway, and exact core or plugin capability permissions.
 ---
 
-Adding an IPC command to PortPal touches four places. Missing any one of them fails silently or diverges between the bin and lib targets.
+# Add a Tauri Command
 
-## 1. Implement the command
+PortPal has one Tauri entrypoint: `src-tauri/src/lib.rs`. Its
+`src-tauri/src/main.rs` is only a wrapper that calls `portpal_lib::run()`.
+Never add command wrappers, modules, builders, or registrations to `main.rs`.
 
-Put the function in the module it belongs to — `src-tauri/src/scanner.rs` (port enumeration), `connections.rs` (socket/connection parsing), `logger.rs` (event history), or `tray.rs` (tray state). Only add a new module if none fit.
+## Backend implementation and registration
 
-The `#[tauri::command]` wrapper itself lives in the entrypoint files, not the module — match the existing pattern there: a thin `#[tauri::command] fn name(...) -> T { module::impl(...) }`.
+Put reusable backend logic in the module that owns it:
 
-Return a `Result<T, String>` for anything that can fail. Do not add new `.expect()` calls — the existing ones in `scanner.rs` are a known liability, not a pattern to copy.
+- `scanner.rs` for port enumeration and process lifecycle operations
+- `connections.rs` for socket and connection data
+- `logger.rs` for event and traffic history
+- `tray.rs` for tray behavior
 
-## 2. Register in BOTH entrypoints
+Keep the `#[tauri::command]` wrapper thin and define it in
+`src-tauri/src/lib.rs`. Blocking scans, process operations, and filesystem work
+must use the existing `run_off_thread` pattern instead of running inline on the
+IPC dispatcher.
 
-`src-tauri/src/main.rs` and `src-tauri/src/lib.rs` each declare their own modules and their own `tauri::Builder`. Add the command function **and** its `invoke_handler` entry to both:
+Register the wrapper once in `lib.rs`:
 
 ```rust
+#[tauri::command]
+async fn your_new_command(arg: String) -> Result<ReturnType, String> {
+    run_off_thread(move || module::implementation(arg))
+        .await
+        .unwrap_or_else(Err)
+}
+
+// Inside portpal_lib::run()
 .invoke_handler(tauri::generate_handler![
     get_ports,
     kill_process,
-    // ... existing commands
+    restart_process,
+    get_port_events,
+    get_port_traffic,
     your_new_command,
 ])
 ```
 
-`main.rs` is the binary that ships, so an entry missing there means the command does not exist at runtime no matter what `lib.rs` says. Leave the existing `greet`-in-lib-only and plugin-registration differences alone unless the task is specifically to fix them.
+Match the existing typed error when the owning module exposes one. Do not turn
+a scan failure into an empty result or add `.expect()`/`.unwrap()` to a runtime
+scan, kill, restart, listener-registration, or lock path.
 
-## 3. Add capability permissions if needed
+When renaming or removing a command, update or remove both its wrapper and its
+single `generate_handler!` entry in `lib.rs`. Confirm `main.rs` remains the
+unchanged wrapper.
 
-If the command uses a Tauri core or plugin API beyond what is already granted, add the permission to `src-tauri/capabilities/default.json`. Currently granted: `core:default`, `opener:default`, `core:window:allow-minimize`, `core:window:allow-maximize`, `core:window:allow-close`.
+## Frontend gateway
 
-A missing permission is denied silently — the frontend `invoke()` rejects with a permission error rather than the command failing visibly.
-
-## 4. Call it from the frontend
-
-In `src/App.tsx` or `src/PortMap.tsx`:
+Add the typed method to `PortPalGateway` and its `invoke()` implementation in
+`src/lib/tauri.ts`. Components and hooks consume that gateway rather than
+importing `invoke` directly.
 
 ```ts
-import { invoke } from "@tauri-apps/api/core";
-const result = await invoke<ReturnType>("your_new_command", { argName: value });
+export interface PortPalGateway {
+  yourNewCommand(arg: string): Promise<ReturnType>;
+}
+
+export const tauriPortPalGateway: PortPalGateway = {
+  yourNewCommand: (arg) =>
+    invoke<ReturnType>('your_new_command', { arg }),
+};
 ```
 
-The command name is the Rust function name verbatim. Argument keys are camelCase on the TS side and snake_case in Rust — Tauri converts them.
+The command name matches the Rust wrapper. Tauri command arguments use
+camelCase keys in TypeScript for snake_case Rust parameters. Update gateway
+mocks and focused tests for every added, renamed, or removed method.
 
-Type the return value. Do not leave an unused import or an unused destructured field behind: `tsconfig.json` sets `noUnusedLocals` and `noUnusedParameters`, so that fails `npm run build`.
+## Capability permissions
 
-## 5. Report, don't verify
+PortPal's own commands in `generate_handler!` are not listed in
+`src-tauri/capabilities/default.json`. That file controls Tauri core and plugin
+APIs used by the webview.
 
-State which files you changed and that both entrypoints were updated. Do not run `npm run build` or `npm run tauri dev` unless asked.
+If the frontend also starts calling a new core or plugin API, read
+`docs/ipc-capabilities.md`, add only its exact `allow-*` permission, and update
+the exact expected set in `src/test/capabilities.test.ts`. Never add an
+aggregate `:default` permission set.
+
+## Verification
+
+Run checks that match the change:
+
+```powershell
+cd src-tauri
+cargo test
+cd ..
+npx vitest run src/test/capabilities.test.ts
+npx tsc --noEmit
+```
+
+Run the focused frontend test for the gateway consumer as well. If runtime
+permission behavior changed, use `npm run tauri dev` and exercise the call;
+capability denials can otherwise look silent in the UI.
+
+Before finishing, verify the obsolete second-entrypoint pattern was not
+reintroduced:
+
+```powershell
+rg -n "tauri::Builder|generate_handler|#\[tauri::command\]" src-tauri/src/main.rs
+```
+
+The expected result is no matches.
