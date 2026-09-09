@@ -480,7 +480,7 @@ tables.
 - **Status**: **Done.** Deleted `src/features/port-map/` feature directory and unrouted
   references, eliminating all `void` suppressions and dead IPC calls.
 
-## [ ] Task: `src-tauri/errors.json` is a tracked zero-byte file
+## [x] Task: `src-tauri/errors.json` is a tracked zero-byte file
 
 - **Location**: `src-tauri/errors.json`
 - **Description**: An empty file committed to the repository and referenced by nothing in
@@ -488,6 +488,8 @@ tables.
   and invites a contributor to populate a structure with no consumer.
 - **Suggested Fix**: Remove it, or populate and wire it to the `ScanError` / `KillError`
   code strings if a catalogue is genuinely wanted.
+- **Status**: **Done.** Removed via `git rm` (commit `ddc5e4f`); nothing referenced it
+  since `ScanError` / `KillError` already serialize code and message directly.
 
 ## [x] Task: README advertises installers and a feature the build does not produce
 
@@ -548,7 +550,7 @@ tables.
   asserts non-empty `VITE_CSP` in `configResolved` and throws during `transformIndexHtml`
   if the literal `%VITE_CSP%` token remains unreplaced.
 
-## [ ] Task: Minor implementation smells
+## [x] Task: Minor implementation smells
 
 - **Location**: `src-tauri/src/logger.rs` (Line 40), `src-tauri/src/scanner.rs` (Line 170), `src/components/ui/Sparkline.tsx` (Lines 123-127), `src/features/traffic/TrafficPage.tsx` (Line 101)
 - **Description**: (a) `PortTraffic::push` trims with `samples.remove(0)`, an O(n) shift
@@ -562,3 +564,8 @@ tables.
   fallback, matching the existing `program_basename_allowed`. (c) Inset the y-range by half
   the stroke width. (d) Relabel as "Sum of peaks", or compute the true peak from
   time-aligned samples once the `get_traffic` merge is fixed.
+- **Status**: **Done.** (a) `PortTraffic.samples` is now a `VecDeque` with
+  `push_back` + `pop_front`. (b) `validate_kill` uses
+  `strip_suffix(".exe").unwrap_or(&name)`, same idiom as the other two call sites.
+  (c) `Sparkline` maps values into `[halfStroke, height - halfStroke]`. (d) The
+  summary now reads "Sum of peaks" with a comment explaining why; test updated.
