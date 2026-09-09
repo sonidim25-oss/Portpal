@@ -1,7 +1,17 @@
 import type { AdvancedPortFilters, PortCategory, PortCounts, PortFilter, PortInfo, TrafficByPort } from '../app/types';
-import { isCriticalPort, isCriticalProcessName } from '../app/taxonomy';
+import { isCriticalPort, isCriticalProcessName, isDevPort } from '../app/taxonomy';
 
-export const DEV_PORTS: Record<number, { label: string; color: string; icon: string }> = {
+/**
+ * UI presentation metadata for well-known ports: brand color and emoji icon.
+ *
+ * This is NOT a classification table — port classification lives in the
+ * shared taxonomy (`src/app/taxonomy.ts` ↔ `shared/taxonomy.json`). This map
+ * only provides display styling for `getServiceName`, `getServiceSecondary`,
+ * and components that render a framework badge. It intentionally includes
+ * system-infrastructure ports (22, 80, 443) so their rows get a service label
+ * and icon even though `classifyPort` categorises them as 'system'.
+ */
+export const PORT_STYLES: Record<number, { label: string; color: string; icon: string }> = {
   3000: { label: "React", color: "#61dafb", icon: "⚛" },
   3001: { label: "React", color: "#61dafb", icon: "⚛" },
   4000: { label: "Node", color: "#68a063", icon: "⬢" },
@@ -25,6 +35,8 @@ export const DEV_PORTS: Record<number, { label: string; color: string; icon: str
   80: { label: "HTTP", color: "#f0a500", icon: "🌐" },
 };
 
+export const DEV_PORTS = PORT_STYLES;
+
 // Critical infrastructure is classified by the shared taxonomy predicates
 // (kept in agreement with the Rust backend through shared/taxonomy.json),
 // so a port can never be kill-protected yet classified as dev, or vice versa.
@@ -35,7 +47,7 @@ export const DEV_PORTS: Record<number, { label: string; color: string; icon: str
  * Well-known infrastructure ports whose service label is authoritative.
  * Naming precedence rule (documented contract):
  * - System service ports (Postgres 5432, MySQL 3306, Redis 6379, Mongo 27017,
- *   SSH 22, HTTP 80, HTTPS 443): the DEV_PORTS service label is PRIMARY
+ *   SSH 22, HTTP 80, HTTPS 443): the PORT_STYLES service label is PRIMARY
  *   (e.g. "Postgres Server"); a folder-derived project_name is SECONDARY.
  *   This holds even when a project_name/project_path leaks onto the listener
  *   (e.g. Postgres started from a project folder still reads "Postgres").
@@ -53,16 +65,16 @@ export function classifyPort(port: PortInfo): PortCategory {
   // misclassify it as dev.
   if (isCriticalPort(port.port) || isCriticalProcessName(port.process_name)) return 'system';
   if (port.project_name || port.project_path) return 'dev';
-  if (DEV_PORTS[port.port]) return 'dev';
+  if (isDevPort(port.port)) return 'dev';
   return 'other';
 }
 
 export function getServiceName(port: PortInfo): string {
-  const dev = DEV_PORTS[port.port];
+  const style = PORT_STYLES[port.port];
   // System services always lead with their service label (see contract above).
-  if (dev && isSystemServicePort(port)) return `${dev.label} Server`;
+  if (style && isSystemServicePort(port)) return `${style.label} Server`;
   if (port.project_name) return port.project_name;
-  if (dev) return `${dev.label} Server`;
+  if (style) return `${style.label} Server`;
   return port.process_name;
 }
 
@@ -73,9 +85,9 @@ export function getServiceName(port: PortInfo): string {
  * - Dev project on a known framework port: the framework label (e.g. "React" under "myapp").
  */
 export function getServiceSecondary(port: PortInfo): string | null {
-  const dev = DEV_PORTS[port.port];
-  if (dev && isSystemServicePort(port)) return port.project_name;
-  if (port.project_name && dev && port.project_name !== dev.label) return dev.label;
+  const style = PORT_STYLES[port.port];
+  if (style && isSystemServicePort(port)) return port.project_name;
+  if (port.project_name && style && port.project_name !== style.label) return style.label;
   return null;
 }
 
@@ -93,19 +105,19 @@ export interface ServiceGroup { key: string; name: string; ports: PortInfo[] }
 
 /** Stable grouping identity for a listener (never a bare display string). */
 export function getServiceGroupKey(port: PortInfo): string {
-  const dev = DEV_PORTS[port.port];
-  if (dev && isSystemServicePort(port)) return `system:${dev.label.toLowerCase()}:${port.port}`;
+  const style = PORT_STYLES[port.port];
+  if (style && isSystemServicePort(port)) return `system:${style.label.toLowerCase()}:${port.port}`;
   if (port.project_path?.trim()) return `project:${port.project_path.trim().toLowerCase()}`;
   if (port.project_name?.trim()) return `project-name:${port.project_name.trim().toLowerCase()}`;
-  if (dev) return `framework:${dev.label.toLowerCase()}`;
+  if (style) return `framework:${style.label.toLowerCase()}`;
   return `process:${port.process_name.toLowerCase()}`;
 }
 
 /** Display name for a service group; duplicates are disambiguated by groupPortsByService. */
 export function getServiceGroupName(port: PortInfo): string {
-  const dev = DEV_PORTS[port.port];
-  if (dev && isSystemServicePort(port)) return dev.label;
-  return port.project_name ?? dev?.label ?? port.process_name;
+  const style = PORT_STYLES[port.port];
+  if (style && isSystemServicePort(port)) return style.label;
+  return port.project_name ?? style?.label ?? port.process_name;
 }
 
 /**
@@ -137,7 +149,7 @@ export function groupPortsByService(ports: PortInfo[]): ServiceGroup[] {
 export function getStatus(port: PortInfo): { label: string; cls: string } {
   // Every row is a live TCP listener; the label distinguishes curated
   // (dev/system taxonomy) listeners from uncatalogued ones.
-  if (DEV_PORTS[port.port]) return { label: "ACTIVE", cls: "status-active" };
+  if (isDevPort(port.port) || isCriticalPort(port.port)) return { label: "ACTIVE", cls: "status-active" };
   return { label: "LISTENING", cls: "status-listening" };
 }
 

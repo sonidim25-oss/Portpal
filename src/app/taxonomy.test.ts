@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fixture from '../../shared/taxonomy.json';
-import { CRITICAL_PORTS, CRITICAL_PROCESS_NAMES, isCriticalPort, isCriticalProcessName } from './taxonomy';
-import { DEV_PORTS } from '../utils/helpers';
+import { CRITICAL_PORTS, CRITICAL_PROCESS_NAMES, DEV_PORTS, isCriticalPort, isCriticalProcessName, isDevPort } from './taxonomy';
+import { PORT_STYLES } from '../utils/helpers';
 
 // Cross-language contract: this module and src-tauri/src/taxonomy.rs assert
 // against the same shared/taxonomy.json fixture, so a protected service added
@@ -16,6 +16,13 @@ describe('taxonomy fixture agreement', () => {
     expect([...CRITICAL_PROCESS_NAMES]).toEqual(fixture.criticalProcessNames);
   });
 
+  it('dev ports match the shared fixture', () => {
+    expect(DEV_PORTS.map((d) => ({ port: d.port, framework: d.framework }))).toEqual(fixture.devPorts);
+    for (const { port } of fixture.devPorts) {
+      expect(isDevPort(port)).toBe(true);
+    }
+  });
+
   it('matches every fixture name with optional .exe and any case, like the backend', () => {
     expect(isCriticalPort(5432)).toBe(true);
     for (const name of fixture.criticalProcessNames) {
@@ -28,9 +35,9 @@ describe('taxonomy fixture agreement', () => {
     expect(isCriticalProcessName('postgres-helper')).toBe(false);
   });
 
-  it('DEV_PORTS covers every fixture dev port', () => {
+  it('PORT_STYLES covers every fixture dev port', () => {
     for (const { port } of fixture.devPorts) {
-      expect(DEV_PORTS[port], `DEV_PORTS missing fixture dev port ${port}`).toBeDefined();
+      expect(PORT_STYLES[port], `PORT_STYLES missing fixture dev port ${port}`).toBeDefined();
     }
   });
 });

@@ -48,7 +48,7 @@ export function KillConfirmation({ count, protectedPorts, hiddenPorts, onCancel,
         <h2 id="kill-confirmation-title">Confirm process termination</h2>
         <div id="kill-confirmation-description">
           <p>{count} unique process{count === 1 ? '' : 'es'} selected
-            {totalPorts > count && <>, affecting <strong>{totalPorts} port{totalPorts === 1 ? '' : 's'}</strong> total</>}.
+            {totalPorts > count && <>, affecting <strong>{totalPorts} port{totalPorts === 1 ? '' : 's'} total</strong></>}.
             {totalPorts <= count && '.'} Termination can lose unsaved data and interrupt services.</p>
           {hiddenPorts.length > 0 && <>
             <p><strong>Also affected (hidden by current filter):</strong></p>
