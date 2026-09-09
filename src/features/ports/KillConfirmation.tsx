@@ -48,8 +48,7 @@ export function KillConfirmation({ count, protectedPorts, hiddenPorts, onCancel,
         <h2 id="kill-confirmation-title">Confirm process termination</h2>
         <div id="kill-confirmation-description">
           <p>{count} unique process{count === 1 ? '' : 'es'} selected
-            {totalPorts > count && <>, affecting <strong>{totalPorts} port{totalPorts === 1 ? '' : 's'} total</strong></>}.
-            {totalPorts <= count && '.'} Termination can lose unsaved data and interrupt services.</p>
+            {totalPorts > count ? <>, affecting <strong>{totalPorts} port{totalPorts === 1 ? '' : 's'} total</strong>.</> : '.'} Termination can lose unsaved data and interrupt services.</p>
           {/* The kill is per-process by design, not a process-tree kill: the
               listener is what holds the port, and a tree kill would reach
               processes that were never on screen. That choice has a cost the

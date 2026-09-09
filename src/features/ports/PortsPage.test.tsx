@@ -324,6 +324,8 @@ describe("PortsPage", () => {
     const dialog = screen.getByRole("alertdialog", { name: "Confirm process termination" });
     expect(within(dialog).getByText(/Only the selected process is stopped/)).toBeVisible();
     expect(within(dialog).getByText(/hold the port open or restart the service/)).toBeVisible();
+    expect(within(dialog).getByText(/1 unique process selected\./)).toBeVisible();
+    expect(within(dialog).queryByText(/\.\./)).not.toBeInTheDocument();
   });
 
   it("names protected Postgres, cancels safely, and deduplicates confirmed PIDs", async () => {
