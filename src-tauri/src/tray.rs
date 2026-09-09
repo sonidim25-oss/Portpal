@@ -128,6 +128,10 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         loop {
             std::thread::sleep(Duration::from_secs(2));
 
+            // Reap any child processes spawned by restart that have exited,
+            // so they don't linger as zombies (Unix) or leak handles (Windows).
+            scanner::reap_children();
+
             // A failed scan must not be flattened into an empty port list: that
             // would emit ports-updated with [], clearing the UI's rows and its
             // error banner, and would make the logger record every live port as

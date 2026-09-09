@@ -17,7 +17,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` resolved outside this work
 | EXTRA HIGH | 1 | 1 | 0 |
 | HIGH | 5 | 4 | 1 |
 | MEDIUM | 15 | 1 | 14 |
-| LOW | 10 | 6 | 4 |
+| LOW | 10 | 9 | 1 |
 
 General note: the shipped `src-tauri` and `src` code is unusually well hardened. The
 restart path is a trusted-store replay with a real jail, the PID 0/1 policy is coherent,
@@ -85,7 +85,7 @@ tables.
   the state as an argument (`lsof -sTCP:ESTABLISHED`, `ss state established`) rather than
   parsing it out of output.
 
-## [ ] Task: Children spawned by restart are never reaped
+## [x] Task: Children spawned by restart are never reaped
 
 - **Location**: `src-tauri/src/scanner.rs` — `spawn_trusted` (Line 758), `kill_unix` (Lines 461-485), `restart_trusted` (Lines 800-810)
 - **Description**: `command.spawn().map(|_| ())` discards the `Child` handle. On Unix
@@ -417,7 +417,7 @@ tables.
 
 # LOW
 
-## [ ] Task: `CLAUDE.md` documents an architecture that no longer exists
+## [x] Task: `CLAUDE.md` documents an architecture that no longer exists
 
 - **Location**: `CLAUDE.md` — "Rust / Tauri" section
 - **Description**: It states that `main.rs` and `lib.rs` are "near-duplicate entrypoints",
@@ -431,6 +431,9 @@ tables.
   duplicated commands, so the doc matches HEAD but not the tree.
 - **Suggested Fix**: Once the entrypoint refactor is committed, rewrite the section for the
   single-entrypoint design and note that the panic-free scan contract is intentional.
+- **Status**: **Done.** Rewritten in `1c82e82` for the single-entrypoint design
+  (`lib.rs` owns the `Builder`, `main.rs` is a 10-line wrapper), with the panic-free
+  scan contract, `parse_netstat_tcp_row`, test/build commands, and git conventions.
 
 ## [x] Task: The Tauri command-mirroring hook is permanently a no-op
 

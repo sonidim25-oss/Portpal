@@ -7,7 +7,7 @@ use crate::netaddr::parse_netstat_tcp_row;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use sysinfo::System;
@@ -559,7 +559,39 @@ fn kill_unix(pid: u32) -> Result<(), String> {
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn process_exists_unix(pid: u32) -> bool {
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    // First, try to reap our own child if it's a zombie. `waitpid(WNOHANG)`
+    // returns the pid if the child has exited (reaping it), 0 if still running,
+    // or -1 if we're not the parent.
+    let mut status: libc::c_int = 0;
+    let ret = unsafe { libc::waitpid(pid as i32, &mut status, libc::WNOHANG) };
+    if ret == pid as i32 {
+        // Child was a zombie; now reaped. It's gone.
+        return false;
+    }
+    // ret == 0 means it's our child and still running → exists.
+    // ret == -1 means we're not the parent → fall through to kill(0) probe.
+
+    if unsafe { libc::kill(pid as i32, 0) } != 0 {
+        return false; // process doesn't exist at all
+    }
+
+    // kill(0) succeeds for zombies too. On Linux, check /proc/<pid>/stat to
+    // detect zombie state for processes we didn't spawn.
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(stat) = std::fs::read_to_string(format!("/proc/{}/stat", pid)) {
+            // Format: "pid (comm) state ..." — the state field is the single
+            // character after the closing paren.
+            if let Some(rest) = stat.rsplit(')').next() {
+                let state = rest.trim_start().chars().next().unwrap_or('?');
+                if state == 'Z' {
+                    return false; // zombie
+                }
+            }
+        }
+    }
+
+    true
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -651,6 +683,37 @@ type TrustedLaunches = HashMap<(u16, u32), LaunchRecord>;
 fn trusted_launches() -> &'static Mutex<TrustedLaunches> {
     static TRUSTED: LazyLock<Mutex<TrustedLaunches>> = LazyLock::new(|| Mutex::new(HashMap::new()));
     &TRUSTED
+}
+
+/// Handles of processes that `spawn_trusted` started, keyed by `(port, pid)`.
+/// Without holding these, PortPal becomes the parent but never calls `wait()`,
+/// so the child turns into a zombie once it exits. The tray poll loop calls
+/// `reap_children()` every tick to harvest finished processes.
+type SpawnedChildren = HashMap<(u16, u32), Child>;
+
+fn spawned_children() -> &'static Mutex<SpawnedChildren> {
+    static CHILDREN: LazyLock<Mutex<SpawnedChildren>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+    &CHILDREN
+}
+
+/// Reaps finished child processes so they don't linger as zombies.
+///
+/// Called once per tray-poll tick (every 2 s). Each stored `Child` is probed
+/// with `try_wait()` — a non-blocking call that reaps the zombie if the
+/// process has exited, or returns `Ok(None)` if it is still running.
+pub fn reap_children() {
+    if let Ok(mut children) = spawned_children().try_lock() {
+        children.retain(|_key, child| {
+            match child.try_wait() {
+                // Process exited — zombie reaped. Remove from map.
+                Ok(Some(_status)) => false,
+                // Still running — keep it.
+                Ok(None) => true,
+                // Error (shouldn't happen) — remove to avoid retrying forever.
+                Err(_) => false,
+            }
+        });
+    }
 }
 
 /// Interpreters a dev server is allowed to be relaunched through when the
@@ -824,7 +887,10 @@ fn build_launch_record(cmd: &[String], cwd: Option<&Path>) -> Option<LaunchRecor
 /// Spawns a vetted record directly — no `cmd /C`, no `sh -c`, no string
 /// splitting. On Windows the child gets its own console so a dev server stays
 /// visible, without routing through a command interpreter.
-fn spawn_trusted(record: &LaunchRecord) -> Result<(), String> {
+///
+/// Returns the `Child` handle so the caller can store it for reaping (on Unix
+/// the parent must eventually `wait()` to prevent zombies).
+fn spawn_trusted(record: &LaunchRecord) -> Result<Child, String> {
     let mut command = Command::new(&record.program);
     command.args(&record.args).current_dir(&record.cwd);
 
@@ -835,7 +901,7 @@ fn spawn_trusted(record: &LaunchRecord) -> Result<(), String> {
         command.creation_flags(CREATE_NEW_CONSOLE);
     }
 
-    command.spawn().map(|_| ()).map_err(|e| e.to_string())
+    command.spawn().map_err(|e| e.to_string())
 }
 
 /// True when `pid` is still listening on `port`. The scan error is propagated
@@ -879,6 +945,17 @@ pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
         if !port_is_listening(port, pid).map_err(|e| e.message)? {
             return Err(format!("pid {} no longer listens on port {}", pid, port));
         }
+
+        // Remove the old child handle so `wait()` on drop reaps it (the kill
+        // path needs the zombie collected before we can reliably detect exit).
+        if let Ok(mut children) = spawned_children().lock() {
+            if let Some(mut old) = children.remove(&(port, pid)) {
+                // Non-blocking reap; the kill_pid call below handles the actual
+                // termination, we just don't want the handle leaked.
+                let _ = old.try_wait();
+            }
+        }
+
         kill_pid(pid).map_err(|e| e.message)?;
         // Wait for the old process to actually disappear instead of assuming a
         // fixed delay covers it. Behaviour on timeout is unchanged: the
@@ -888,7 +965,15 @@ pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
         wait_until(RESTART_SETTLE, || process_has_exited(&mut probe, pid));
     }
 
-    spawn_trusted(&record)
+    let child = spawn_trusted(&record)?;
+    let new_pid = child.id();
+
+    // Store the handle so the tray poll loop can reap it later.
+    if let Ok(mut children) = spawned_children().lock() {
+        children.insert((port, new_pid), child);
+    }
+
+    Ok(())
 }
 
 // ─── Test helpers (pure, no OS calls) ───────────────────────────────────────
