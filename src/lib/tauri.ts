@@ -20,6 +20,8 @@ export interface PortPalGateway {
   onPortEvents(handler: (events: PortEvent[]) => void): Promise<() => void>;
   onScanDegraded(handler: (error: ScanError) => void): Promise<() => void>;
   onScanRecovered(handler: () => void): Promise<() => void>;
+  /** Fires once per completed background scan, whether or not the ports changed. */
+  onScanCompleted(handler: () => void): Promise<() => void>;
 }
 
 export const tauriPortPalGateway: PortPalGateway = {
@@ -38,4 +40,8 @@ export const tauriPortPalGateway: PortPalGateway = {
   // visible ports have gone stale.
   onScanDegraded: (handler) => listen<ScanError>('scan-degraded', (event) => handler(event.payload)),
   onScanRecovered: (handler) => listen<null>('scan-recovered', () => handler()),
+  // Separate from `ports-updated`, which only fires when the port list
+  // actually differs: "the scanner is alive" and "the data changed" are
+  // different claims, and the monitoring status needs the first.
+  onScanCompleted: (handler) => listen<null>('scan-completed', () => handler()),
 };

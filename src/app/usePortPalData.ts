@@ -118,6 +118,7 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
     let unlistenEvents: (() => void) | undefined;
     let unlistenDegraded: (() => void) | undefined;
     let unlistenRecovered: (() => void) | undefined;
+    let unlistenScanCompleted: (() => void) | undefined;
 
     // A subscription that never attaches cannot be retried per resource: the
     // stream simply never arrives, and refreshing that resource would not
@@ -141,7 +142,9 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
     subscribe(gateway.onPortsUpdated((updatedPorts) => {
       setPorts(updatedPorts);
       setLoading(false);
-      setLastScanAt(Date.now());
+      // `lastScanAt` is NOT stamped here. This event only fires when the port
+      // list changed, so using it made the status line report the last change
+      // rather than the last scan; `onScanCompleted` below is the scan clock.
       setErrors((current) => ({ ...current, ports: null }));
       setKilledPorts((current) => {
         // Keyed by port number: a STOPPED row describes the endpoint, not the
@@ -187,6 +190,15 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
       void refreshPorts();
     }), (unlisten) => { unlistenRecovered = unlisten; }, 'scan recovery');
 
+    // The liveness clock behind "Last scan". It ticks on every completed scan,
+    // including the quiet ones that change nothing, so a climbing value means
+    // scanning really has stopped — the signal the line is there to give.
+    // A failed scan emits nothing, so the value climbs then too, which is
+    // correct: the last successful scan is exactly what it names.
+    subscribe(gateway.onScanCompleted(() => {
+      setLastScanAt(Date.now());
+    }), (unlisten) => { unlistenScanCompleted = unlisten; }, 'scan heartbeat');
+
     return () => {
       active = false;
       clearInterval(trafficTimer);
@@ -195,6 +207,7 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
       unlistenEvents?.();
       unlistenDegraded?.();
       unlistenRecovered?.();
+      unlistenScanCompleted?.();
     };
   }, [gateway, refreshEvents, refreshPorts, refreshTraffic, showToast]);
 
