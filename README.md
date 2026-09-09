@@ -145,6 +145,15 @@ Build from source<br/>
 | **Rust** | ≥ 1.70 | [rustup.rs](https://rustup.rs) |
 | **Tauri CLI** | v2 | Included |
 
+#### Runtime tools
+
+PortPal reads the network through system tools rather than raw sockets, and
+**Linux needs two of them**: `lsof` for listening ports and `ss` (iproute2) for
+connection counts. Windows (`netstat`) and macOS (`lsof`) each serve both from
+one tool. Each is checked at startup and names itself on stderr if it is
+missing; without `ss`, connection counts and the port map read as empty rather
+than as an error. See [docs/scan-scope.md](docs/scan-scope.md).
+
 #### Quick Start (Dev Environment)
 
 ```bash
