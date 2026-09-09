@@ -155,6 +155,17 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
         }
         return next;
       });
+      // The backend purges first_seen for stopped endpoints (logger.rs), so
+      // the frontend mirror must do the same to avoid unbounded growth.
+      setObservedAt((current) => {
+        const livePorts = new Set(updatedPorts.map((port) => port.port));
+        const next: Record<number, number> = {};
+        for (const key of Object.keys(current)) {
+          const port = Number(key);
+          if (livePorts.has(port)) next[port] = current[port];
+        }
+        return next;
+      });
       void refreshTraffic();
     }), (unlisten) => { unlistenPorts = unlisten; }, 'port updates');
 

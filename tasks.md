@@ -403,7 +403,7 @@ tables.
   button present or absent) express restartability, which `PortTable` already handles via
   its own `restartable` check.
 
-## [ ] Task: `observedAt` accumulates entries for ports that no longer exist
+## [x] Task: `observedAt` accumulates entries for ports that no longer exist
 
 - **Location**: `src/app/usePortPalData.ts` (Lines 88, 160)
 - **Description**: Both `refreshEvents` and the `onPortEvents` stream merge into
