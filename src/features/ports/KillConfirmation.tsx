@@ -3,9 +3,11 @@ import { createPortal } from 'react-dom';
 import type { PortInfo } from '../../app/types';
 import { Button } from '../../components/ui/controls';
 
-export function KillConfirmation({ count, protectedPorts, onCancel, onConfirm }: {
+export function KillConfirmation({ count, protectedPorts, hiddenPorts, onCancel, onConfirm }: {
   count: number;
   protectedPorts: PortInfo[];
+  /** Ports sharing a PID with the selection that are hidden by the current filter. */
+  hiddenPorts: PortInfo[];
   onCancel(): void;
   onConfirm(): void;
 }) {
@@ -23,6 +25,9 @@ export function KillConfirmation({ count, protectedPorts, onCancel, onConfirm }:
       previous?.focus();
     };
   }, []);
+
+  // Total ports affected = selected endpoints + hidden siblings
+  const totalPorts = count + hiddenPorts.length;
 
   return createPortal(
     <div className="kill-confirmation-overlay">
@@ -42,7 +47,13 @@ export function KillConfirmation({ count, protectedPorts, onCancel, onConfirm }:
         }}>
         <h2 id="kill-confirmation-title">Confirm process termination</h2>
         <div id="kill-confirmation-description">
-          <p>{count} unique process{count === 1 ? '' : 'es'} selected. Termination can lose unsaved data and interrupt services.</p>
+          <p>{count} unique process{count === 1 ? '' : 'es'} selected
+            {totalPorts > count && <>, affecting <strong>{totalPorts} port{totalPorts === 1 ? '' : 's'}</strong> total</>}.
+            {totalPorts <= count && '.'} Termination can lose unsaved data and interrupt services.</p>
+          {hiddenPorts.length > 0 && <>
+            <p><strong>Also affected (hidden by current filter):</strong></p>
+            <ul>{hiddenPorts.map((port) => <li key={`${port.pid}-${port.port}`}>:{port.port} — <strong>{port.process_name}</strong> (PID {port.pid})</li>)}</ul>
+          </>}
           {protectedPorts.length > 0 && <>
             <p><strong>Protected services will be skipped:</strong></p>
             <ul>{protectedPorts.map((port) => <li key={port.pid}><strong>{port.process_name}</strong> — :{port.port} (PID {port.pid})</li>)}</ul>

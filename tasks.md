@@ -226,7 +226,7 @@ tables.
 - **Suggested Fix**: Run the killed entries through the same `filterPorts` call before
   passing them to `PortTable`, or pass the predicate down and apply it in both maps.
 
-## [ ] Task: "Kill All" understates its blast radius
+## [x] Task: "Kill All" understates its blast radius
 
 - **Location**: `src/features/ports/PortsPage.tsx` (Lines 58-65, 172), `src/features/ports/KillConfirmation.tsx` (Line 519)
 - **Description**: Targets come from `uniqueProcesses(filteredPorts)` and the dialog says

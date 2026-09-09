@@ -215,9 +215,18 @@ export function PortsPage({
         )}
       </div>
       {killSummary && <div className="kill-summary" role="status">{killSummary}</div>}
-      {killSelection && <KillConfirmation count={killSelection.length}
-        protectedPorts={killSelection.flatMap((port) => { const protectedPort = protectedListener(port); return protectedPort ? [protectedPort] : []; })}
-        onCancel={() => setKillSelection(null)} onConfirm={() => void confirmKills()} />}
+      {killSelection && (() => {
+        // Compute ports that share a PID with the selection but aren't in it
+        // (hidden by the current filter). These will also be killed since kill
+        // is per-PID, so the dialog must disclose them.
+        const selectedPids = new Set(killSelection.map((p) => p.pid));
+        const selectedKeys = new Set(killSelection.map((p) => `${p.pid}:${p.port}`));
+        const hidden = ports.filter((p) => selectedPids.has(p.pid) && !selectedKeys.has(`${p.pid}:${p.port}`));
+        return <KillConfirmation count={killSelection.length}
+          protectedPorts={killSelection.flatMap((port) => { const protectedPort = protectedListener(port); return protectedPort ? [protectedPort] : []; })}
+          hiddenPorts={hidden}
+          onCancel={() => setKillSelection(null)} onConfirm={() => void confirmKills()} />;
+      })()}
     </section>
   );
 }
