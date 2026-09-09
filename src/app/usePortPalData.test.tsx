@@ -350,8 +350,8 @@ describe('usePortPalData', () => {
     // get_events returns reverse-chronological events (newest first).
     // When multiple start events exist for a port, the newest timestamp must win.
     const events: PortEvent[] = [
-      { port: 5173, pid: 1234, event_type: 'started', timestamp: 2000, process_name: 'node' },
-      { port: 5173, pid: 1234, event_type: 'started', timestamp: 1000, process_name: 'node' },
+      { port: 5173, pid: 1234, event_type: 'started', timestamp: 2000, process_name: 'node', framework: null },
+      { port: 5173, pid: 1234, event_type: 'started', timestamp: 1000, process_name: 'node', framework: null },
     ];
     const gateway = createGateway({ getPortEvents: vi.fn().mockResolvedValue(events) });
     const { result } = renderHook(() => usePortPalData(gateway));
