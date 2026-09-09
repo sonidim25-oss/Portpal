@@ -163,7 +163,7 @@ describe('usePortPalData', () => {
     expect(result.current.observedAt[5173]).toBe(12345);
   });
 
-  it('keeps restartable killed ports, but not nonrestartable ones', async () => {
+  it('keeps every killed port as a STOPPED row regardless of restartability', async () => {
     const gateway = createGateway();
     const { result } = renderHook(() => usePortPalData(gateway));
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -173,7 +173,8 @@ describe('usePortPalData', () => {
 
     const nonrestartable = { ...port, port: 3001, pid: 4321, start_cmd: null, project_path: null };
     await act(async () => result.current.killPort(nonrestartable));
-    expect(result.current.killedPorts.has(3001)).toBe(false);
+    expect(result.current.killedPorts.has(3001)).toBe(true);
+    expect(result.current.killedPorts.get(3001)).toEqual(nonrestartable);
   });
 
   it('restarts by port and pid only, never forwarding a command or path', async () => {

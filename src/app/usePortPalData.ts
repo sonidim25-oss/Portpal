@@ -217,7 +217,7 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
       setKilledPorts((current) => {
         const next = new Map(current);
         for (const endpoint of siblings) {
-          if (endpoint.start_cmd && endpoint.project_path) next.set(endpoint.port, endpoint);
+          next.set(endpoint.port, endpoint);
         }
         return next;
       });
