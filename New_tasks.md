@@ -15,15 +15,15 @@ Status legend: `[ ]` open · `[x]` done · `[~]` resolved outside this work
 
 | Priority | Total | Done | Open |
 |---|---|---|---|
-| LOW | 2 | 1 | 1 |
-| MEDIUM | 1 | 0 | 1 |
-| **Total** | **3** | **1** | **2** |
+| LOW | 2 | 2 | 0 |
+| MEDIUM | 1 | 1 | 0 |
+| **Total** | **3** | **3** | **0** |
 
 ---
 
 # MEDIUM
 
-## [ ] Task: `add-tauri-command` skill tells you to register commands in two files
+## [x] Task: `add-tauri-command` skill tells you to register commands in two files
 
 - **Location**: `.claude/skills/add-tauri-command/SKILL.md`, contradicted by `CLAUDE.md`
   ("There is one entrypoint: `src-tauri/src/lib.rs`")
@@ -43,6 +43,12 @@ Status legend: `[ ]` open · `[x]` done · `[~]` resolved outside this work
   exact, no aggregate `:default` sets), `invoke()` in the frontend. Check the rest of the
   skill against current `CLAUDE.md` while there; if more of it has drifted, regenerating
   it may beat patching.
+- **Fixed by**: `23a1ea2` "docs(skill): update Tauri command workflow" (branch
+  `fix/add-tauri-command-skill`). The rewritten skill states that `main.rs` is only a
+  wrapper around `portpal_lib::run()` and that command wrappers, modules, builders and
+  registrations never go there, covers the capability step, and ships an `rg` check that
+  asserts `main.rs` stays free of `tauri::Builder` / `generate_handler!` /
+  `#[tauri::command]`. The `description:` frontmatter no longer says "BOTH".
 
 ---
 
@@ -66,7 +72,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` resolved outside this work
 - **Origin**: Arrived with the blast-radius disclosure (`b250134`), not with the kill-path
   change.
 
-## [ ] Task: Sidebar "Last scan" does not track the scan loop
+## [x] Task: Sidebar "Last scan" does not track the scan loop
 
 - **Location**: sidebar status block ("Monitoring — N processes, N ports / Last scan: …");
   producer is `tray.rs`'s 2s poll and its `ports-updated` event
@@ -83,8 +89,17 @@ Status legend: `[ ]` open · `[x]` done · `[~]` resolved outside this work
   every completed scan (then it should never exceed a few seconds while healthy), or keep
   the current semantics and relabel it ("Last change …"). Whichever way, assert it: no
   test currently pins this string.
-- **Note**: Observed behaviour only — the component was not read while diagnosing, so the
-  cause above is a hypothesis, not a finding.
+- **Cause (confirmed)**: `lastScanAt` was stamped in `usePortPalData`'s `onPortsUpdated`
+  handler, and `tray.rs` emits `ports-updated` only when the serialized port list differs
+  from the previous tick. That gate is deliberate (no re-render for an identical list),
+  but it makes the event a *change* signal, not a scan clock. The hypothesis above was
+  right.
+- **Fixed by**: PR #5 `fix/last-scan-heartbeat`. `tray.rs` now emits `scan-completed` on
+  every successful tick, `ports-updated` keeps its change gate, and the hook stamps the
+  clock from the heartbeat alone. A failed scan emits neither, so the value still climbs
+  when scanning is genuinely broken. Measured in the running app: 10 heartbeats in 20s
+  (the 2s poll) on an idle machine where the old wiring stamped the clock zero times.
+  Three hook tests pin it; all three fail without the change.
 
 ---
 
