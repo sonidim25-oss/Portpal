@@ -166,7 +166,6 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
         }
         return next;
       });
-      void refreshTraffic();
     }), (unlisten) => { unlistenPorts = unlisten; }, 'port updates');
 
     subscribe(gateway.onPortEvents((updatedEvents) => {

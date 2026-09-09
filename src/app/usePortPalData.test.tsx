@@ -122,7 +122,7 @@ describe('usePortPalData', () => {
     expect(result.current.lastScanAt).not.toBeNull();
   });
 
-  it('updates ports and traffic from live port updates and refreshes traffic every four seconds', async () => {
+  it('updates ports and refreshes traffic on its four-second interval', async () => {
     vi.useFakeTimers();
     let receivePorts: ((ports: PortInfo[]) => void) | undefined;
     const updatedPort = { ...port, port: 4173 };
@@ -142,7 +142,7 @@ describe('usePortPalData', () => {
     expect(result.current.ports).toEqual([updatedPort]);
 
     await act(async () => vi.advanceTimersByTimeAsync(4000));
-    expect(gateway.getPortTraffic).toHaveBeenCalledTimes(3);
+    expect(gateway.getPortTraffic).toHaveBeenCalledTimes(2);
   });
 
   it('records observed times from live start events', async () => {

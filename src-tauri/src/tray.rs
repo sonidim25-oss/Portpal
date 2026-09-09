@@ -126,7 +126,15 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
     std::thread::spawn(move || {
         loop {
-            std::thread::sleep(Duration::from_secs(2));
+            // Keep the tray responsive while the window is open, but avoid
+            // repeatedly spawning the platform scan tools while the app is
+            // hidden. A later foreground interaction triggers a fresh scan.
+            let poll_interval = app_handle
+                .get_webview_window("main")
+                .and_then(|window| window.is_visible().ok())
+                .map(|visible| if visible { 2 } else { 10 })
+                .unwrap_or(2);
+            std::thread::sleep(Duration::from_secs(poll_interval));
 
             // Reap any child processes spawned by restart that have exited,
             // so they don't linger as zombies (Unix) or leak handles (Windows).

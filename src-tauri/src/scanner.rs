@@ -267,15 +267,22 @@ pub fn kill_pid(pid: u32) -> Result<(), KillError> {
     if is_reserved_pid(pid) || pid > i32::MAX as u32 {
         return Err(KillError::new("invalid_pid", "Reserved or invalid process ID"));
     }
-    // Host configuration can add protection, never remove the defaults. No
-    // override is exposed through the PID-only webview command.
-    let additional = std::env::var("PORTPAL_CRITICAL_PORTS").unwrap_or_default()
-        .split(',').filter_map(|port| port.trim().parse::<u16>().ok()).collect::<Vec<_>>();
     // A scan that did not run cannot clear a kill: without a port list the
     // critical-process guard has nothing to check against, so fail closed with
     // the real reason instead of the misleading "not observed".
     let ports = try_scan_ports()
         .map_err(|e| KillError::new("scan_failed", format!("Cannot verify what PID {pid} is listening on: {e}")))?;
+    kill_pid_with(pid, &ports)
+}
+
+/// Kills a process after the caller has already captured a successful scan.
+/// Keeping the snapshot at the operation boundary avoids rescanning the same
+/// listener set when restart first verifies and then terminates a process.
+fn kill_pid_with(pid: u32, ports: &[PortInfo]) -> Result<(), KillError> {
+    // Host configuration can add protection, never remove the defaults. No
+    // override is exposed through the PID-only webview command.
+    let additional = std::env::var("PORTPAL_CRITICAL_PORTS").unwrap_or_default()
+        .split(',').filter_map(|port| port.trim().parse::<u16>().ok()).collect::<Vec<_>>();
     validate_kill(pid, &ports, &additional)?;
     let mut sys = System::new();
     sys.refresh_processes();
@@ -966,8 +973,8 @@ fn spawn_trusted(record: &LaunchRecord) -> Result<Child, String> {
 /// True when `pid` is still listening on `port`. The scan error is propagated
 /// rather than collapsed into `false`, so a broken scan aborts the restart
 /// instead of looking like a process that already stopped.
-fn port_is_listening(port: u16, pid: u32) -> Result<bool, ScanError> {
-    Ok(try_scan_ports()?.iter().any(|p| p.port == port && p.pid == pid))
+fn port_is_listening_with(port: u16, pid: u32, ports: &[PortInfo]) -> bool {
+    ports.iter().any(|p| p.port == port && p.pid == pid)
 }
 
 /// Restarts the process recorded for `(port, pid)` during the last scan.
@@ -1001,7 +1008,8 @@ pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
         if live != recorded {
             return Err(format!("pid {} no longer matches the recorded launch", pid));
         }
-        if !port_is_listening(port, pid).map_err(|e| e.message)? {
+        let ports = try_scan_ports().map_err(|e| e.message)?;
+        if !port_is_listening_with(port, pid, &ports) {
             return Err(format!("pid {} no longer listens on port {}", pid, port));
         }
 
@@ -1015,7 +1023,7 @@ pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
             }
         }
 
-        kill_pid(pid).map_err(|e| e.message)?;
+        kill_pid_with(pid, &ports).map_err(|e| e.message)?;
         // Wait for the old process to actually disappear instead of assuming a
         // fixed delay covers it. Behaviour on timeout is unchanged: the
         // replacement is still spawned, so this only ever returns sooner than
@@ -1143,6 +1151,14 @@ mod tests {
         let (tool, args): (&str, &[&str]) = ("sh", &["-c", "echo portpal"]);
 
         assert!(run_scan_tool(tool, args).unwrap().contains("portpal"));
+    }
+
+    #[test]
+    fn port_snapshot_lookup_does_not_scan_again() {
+        let ports = vec![listener(4242, 3000, "node")];
+
+        assert!(port_is_listening_with(3000, 4242, &ports));
+        assert!(!port_is_listening_with(3001, 4242, &ports));
     }
 
     #[test]
