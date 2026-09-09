@@ -133,7 +133,7 @@ four files.
 
 ### `DEV_PORTS` and the catalog overlap
 
-`src/utils/helpers.ts` has `DEV_PORTS` (19 ports, label + colour + emoji) and
+`src/utils/helpers.ts` has `DEV_PORTS` (21 ports, label + colour + emoji) and
 this module has `PORT_CATALOG` (117 ports, plain names + descriptions). The
 duplication is deliberate — importing `helpers.ts` would have coupled this
 module to a file being rewritten.

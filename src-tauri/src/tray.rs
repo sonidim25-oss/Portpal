@@ -29,11 +29,11 @@ impl DebounceState {
     }
 }
 
-/// Tray liveness derives from the graph's taxonomy table
-/// (`connections::is_dev_port`), so icon state, tooltip count, and graph
+/// Tray liveness derives from the shared taxonomy table
+/// (`taxonomy::is_dev_port`), so icon state, tooltip count, and graph
 /// liveness can never diverge into per-surface port lists.
 fn is_tray_dev_port(port: u16) -> bool {
-    crate::connections::is_dev_port(port)
+    crate::taxonomy::is_dev_port(port)
 }
 
 /// Poison-tolerant mutex access: a panic while holding the lock must degrade
@@ -167,7 +167,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             {
                 let port_tuples: Vec<(u16, u32, String, Option<String>)> = ports.iter()
                     .map(|p| {
-                        let fw = crate::connections::get_framework_name(p.port);
+                        let fw = crate::taxonomy::get_framework_name(p.port);
                         (p.port, p.pid, p.process_name.clone(), fw)
                     })
                     .collect();
@@ -305,7 +305,7 @@ mod tests {
     fn icon_and_tooltip_agree_on_8888() {
         // Regression: tooltip counter once omitted 8888 while compute_state
         // treated it as dev, yielding Active icon with "0 dev ports".
-        // Both now derive from connections::is_dev_port.
+        // Both now derive from taxonomy::is_dev_port.
         let ports = vec![p(8888)];
         assert_eq!(compute_state(&ports), TrafficState::Active);
         let count = ports.iter().filter(|p| is_tray_dev_port(p.port)).count();
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn tray_taxonomy_matches_graph() {
         // Backend surfaces must agree: every graph dev port is a tray dev port.
-        for (port, _) in crate::connections::dev_ports() {
+        for (port, _) in crate::taxonomy::DEV_PORTS {
             assert!(is_tray_dev_port(*port), "tray missing graph dev port {port}");
         }
     }

@@ -4,6 +4,7 @@
 use crate::netaddr::parse_port;
 #[cfg(target_os = "windows")]
 use crate::netaddr::parse_netstat_tcp_row;
+use crate::taxonomy::{CRITICAL_PORTS, is_protected_process_name};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::io;
@@ -212,8 +213,6 @@ impl KillError {
     }
 }
 
-const CRITICAL_PORTS: &[u16] = &[22, 80, 443, 3306, 5432, 6379, 27017];
-
 /// The one definition of a reserved process ID, used by the kill guards.
 ///
 /// PID 0 is not a real process and PID 1 is init/launchd/`wininit`; signalling
@@ -253,9 +252,7 @@ fn validate_kill(pid: u32, ports: &[PortInfo], additional_critical_ports: &[u16]
         return Err(KillError::new("not_observed", format!("PID {pid} is not a currently observed listening process; rescan and try again")));
     }
     for listener in listeners {
-        let name = listener.process_name.to_ascii_lowercase();
-        let name = name.strip_suffix(".exe").unwrap_or(&name);
-        if ["system", "svchost", "lsass", "postgres", "redis-server", "mysqld", "mongod"].contains(&name)
+        if is_protected_process_name(&listener.process_name)
             || CRITICAL_PORTS.contains(&listener.port)
             || additional_critical_ports.contains(&listener.port)
         {

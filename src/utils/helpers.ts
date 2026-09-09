@@ -1,4 +1,5 @@
 import type { AdvancedPortFilters, PortCategory, PortCounts, PortFilter, PortInfo, TrafficByPort } from '../app/types';
+import { isCriticalPort, isCriticalProcessName } from '../app/taxonomy';
 
 export const DEV_PORTS: Record<number, { label: string; color: string; icon: string }> = {
   3000: { label: "React", color: "#61dafb", icon: "⚛" },
@@ -16,14 +17,20 @@ export const DEV_PORTS: Record<number, { label: string; color: string; icon: str
   27017: { label: "Mongo", color: "#4db33d", icon: "🍃" },
   9000: { label: "PHP", color: "#8892bf", icon: "🐘" },
   1420: { label: "Tauri", color: "#ffc131", icon: "🦀" },
+  4173: { label: "Vite", color: "#646cff", icon: "⚡" },
+  2000: { label: "Node", color: "#68a063", icon: "⬢" },
+  8443: { label: "HTTPS", color: "#22c55e", icon: "🔐" },
   22: { label: "SSH", color: "#6e7681", icon: "🔒" },
   443: { label: "HTTPS", color: "#22c55e", icon: "🔐" },
   80: { label: "HTTP", color: "#f0a500", icon: "🌐" },
 };
 
-const SYSTEM_PORTS = new Set([22, 80, 443, 3306, 5432, 6379, 27017]);
-const SYSTEM_PROCESSES = /^(system|svchost(?:\.exe)?|lsass(?:\.exe)?|postgres|redis-server|mysqld|mongod)$/i;
-
+// Critical infrastructure is classified by the shared taxonomy predicates
+// (kept in agreement with the Rust backend through shared/taxonomy.json),
+// so a port can never be kill-protected yet classified as dev, or vice versa.
+// The name check allows one `.exe` suffix for every protected name, exactly
+// like the backend and the kill guard. This replaces the former byte-identical
+// SYSTEM_PORTS / SYSTEM_SERVICE_PORTS pair.
 /**
  * Well-known infrastructure ports whose service label is authoritative.
  * Naming precedence rule (documented contract):
@@ -36,17 +43,15 @@ const SYSTEM_PROCESSES = /^(system|svchost(?:\.exe)?|lsass(?:\.exe)?|postgres|re
  *   framework label is SECONDARY.
  * - Everything else: process_name, with project_name as secondary when present.
  */
-const SYSTEM_SERVICE_PORTS = new Set([22, 80, 443, 3306, 5432, 6379, 27017]);
-
 export function isSystemServicePort(port: PortInfo): boolean {
-  return SYSTEM_SERVICE_PORTS.has(port.port);
+  return isCriticalPort(port.port);
 }
 
 export function classifyPort(port: PortInfo): PortCategory {
   // System first: a project_name/project_path leaking onto an infrastructure
   // listener (e.g. Postgres launched from a project folder) must not
   // misclassify it as dev.
-  if (SYSTEM_PORTS.has(port.port) || SYSTEM_PROCESSES.test(port.process_name)) return 'system';
+  if (isCriticalPort(port.port) || isCriticalProcessName(port.process_name)) return 'system';
   if (port.project_name || port.project_path) return 'dev';
   if (DEV_PORTS[port.port]) return 'dev';
   return 'other';

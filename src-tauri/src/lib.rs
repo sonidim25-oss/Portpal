@@ -1,5 +1,6 @@
 mod netaddr;
 mod scanner;
+mod taxonomy;
 mod tray;
 mod connections;
 mod logger;

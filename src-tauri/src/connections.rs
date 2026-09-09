@@ -5,6 +5,7 @@ use crate::netaddr::parse_port;
 #[cfg(target_os = "windows")]
 use crate::netaddr::parse_netstat_tcp_row;
 use crate::scanner::{is_unattributed_pid, resolve_external_tool};
+use crate::taxonomy::{get_framework_name, is_dev_port};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
@@ -32,35 +33,6 @@ pub struct GraphEdge {
 pub struct PortGraph {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
-}
-
-const DEV_PORTS: &[(u16, &str)] = &[
-    (3000, "React"), (3001, "React"), (4000, "Node"),
-    (4200, "Angular"), (5173, "Vite"), (5174, "Vite"),
-    (8000, "Django"), (8080, "HTTP"), (8888, "Jupyter"),
-    (5432, "Postgres"), (3306, "MySQL"), (6379, "Redis"),
-    (27017, "Mongo"), (9000, "PHP"), (1420, "Tauri"),
-    (4173, "Vite"), (2000, "Node"), (8443, "HTTPS"),
-];
-
-fn get_framework(port: u16) -> Option<String> {
-    DEV_PORTS.iter()
-        .find(|(p, _)| *p == port)
-        .map(|(_, f)| f.to_string())
-}
-
-pub fn get_framework_name(port: u16) -> Option<String> {
-    get_framework(port)
-}
-
-pub fn is_dev_port(port: u16) -> bool {
-    DEV_PORTS.iter().any(|(p, _)| *p == port)
-}
-
-/// Backend dev-port set for tray/liveness surfaces, so icon, tooltip, and
-/// graph liveness derive from the same table instead of three copies.
-pub fn dev_ports() -> &'static [(u16, &'static str)] {
-    DEV_PORTS
 }
 
 /// Stable endpoint identity: ports are NOT unique (SO_REUSEADDR conflicts,
@@ -128,7 +100,7 @@ fn build_graph(
             pid: *pid,
             process_name: process_name.clone(),
             project_name: project_name.clone(),
-            framework: get_framework(*port),
+            framework: get_framework_name(*port),
             is_dev: is_dev_port(*port),
             connection_count: 0,
         });
