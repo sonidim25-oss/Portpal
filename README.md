@@ -1,7 +1,5 @@
 <div align="center">
 
-![PortPal — Developer Port Manager](https://raw.githubusercontent.com/wisher567/Portpal/main/assets/hero.png)
-
 # ⚡ PortPal — Enhanced Edition
 
 **Know what's running. Kill what's blocking. Safely.**
@@ -16,8 +14,6 @@ A hardened, production-grade native desktop dashboard for modern developers. Sto
 [![Rust](https://img.shields.io/badge/Rust-CE422B?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
 **[View Original Project](https://github.com/wisher567/Portpal) • [Issues & Discussion](https://github.com/sonidim25-oss/Portpal)**
-
-![PortPal App Interaction Demo](https://raw.githubusercontent.com/wisher567/Portpal/main/assets/gif.gif)
 
 </div>
 
