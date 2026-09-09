@@ -4,7 +4,7 @@ Full-codebase review: `src-tauri/src/**` (Rust backend), `src/**` (React/TypeScr
 frontend), `dev/`, and build/security configuration (`vite.config.ts`,
 `tauri.conf.json`, `capabilities/`, `.env*`, `index.html`).
 
-**14 tasks** — all MEDIUM, all open.
+**14 tasks** — all 14 completed.
 
 Status legend: `[ ]` open · `[x]` done · `[~]` resolved outside this work
 
@@ -14,17 +14,17 @@ Status legend: `[ ]` open · `[x]` done · `[~]` resolved outside this work
 
 | Priority | Total | Done | Open |
 |---|---|---|---|
-| MEDIUM | 14 | 0 | 14 |
-| **Total** | **14** | **0** | **14** |
+| MEDIUM | 14 | 14 | 0 |
+| **Total** | **14** | **14** | **0** |
 
-General note: the remaining findings cluster in platform assumptions, frontend
-destructive-action UX, and duplicated policy tables.
+General note: all findings across platform assumptions, frontend
+destructive-action UX, and duplicated policy tables have been resolved.
 
 ---
 
 # MEDIUM
 
-## [ ] Task: STOPPED rows ignore the active search and filters
+## [x] Task: STOPPED rows ignore the active search and filters
 
 - **Location**: `src/features/ports/PortsPage.tsx` (Lines 194-205), `src/features/ports/PortTable.tsx` (Lines 455-469)
 - **Description**: `PortTable` receives `ports={filteredPorts}` but
@@ -35,7 +35,7 @@ destructive-action UX, and duplicated policy tables.
 - **Suggested Fix**: Run the killed entries through the same `filterPorts` call before
   passing them to `PortTable`, or pass the predicate down and apply it in both maps.
 
-## [ ] Task: "Kill All" understates its blast radius
+## [x] Task: "Kill All" understates its blast radius
 
 - **Location**: `src/features/ports/PortsPage.tsx` (Lines 58-65, 172), `src/features/ports/KillConfirmation.tsx` (Line 519)
 - **Description**: Targets come from `uniqueProcesses(filteredPorts)` and the dialog says
@@ -47,7 +47,7 @@ destructive-action UX, and duplicated policy tables.
   the selected PIDs and enumerate it ("3 processes, 7 ports — including :8080 and :9229,
   hidden by the current filter").
 
-## [ ] Task: Port taxonomy and kill policy duplicated across six tables in two languages
+## [x] Task: Port taxonomy and kill policy duplicated across six tables in two languages
 
 - **Location**: `src-tauri/src/connections.rs` (Lines 32-39), `src-tauri/src/scanner.rs` (Lines 152, 176), `src/utils/helpers.ts` (Lines 3-22, 24, 39), `src/app/killPolicy.ts` (Lines 105-106), `src/port-intel/catalog.ts`
 - **Description**: Which ports are dev ports, which are critical infrastructure, and which
@@ -65,7 +65,7 @@ destructive-action UX, and duplicated policy tables.
   the Rust source at build time. Failing that, collapse the within-language duplicates and
   add a cross-language test asserting set equality against a shared JSON fixture.
 
-## [ ] Task: External scan and kill tools are resolved through `PATH`
+## [x] Task: External scan and kill tools are resolved through `PATH`
 
 - **Location**: `src-tauri/src/scanner.rs` — `run_scan_tool` (Line 62), `kill_windows` (Line 312), `get_project_path_unix_fallback` (Line 407); `src-tauri/src/connections.rs` (Lines 245, 298, 340)
 - **Description**: Every external invocation uses a bare program name — `netstat`,
@@ -80,7 +80,7 @@ destructive-action UX, and duplicated policy tables.
   canonical `/usr/sbin/lsof` and `/usr/bin/ss` with a documented fallback probe. Verify the
   resolved path is not user-writable during `preflight`.
 
-## [ ] Task: Windows kill is force-only, has a PID-reuse window, and orphans children
+## [x] Task: Windows kill is force-only, has a PID-reuse window, and orphans children
 
 - **Location**: `src-tauri/src/scanner.rs` — `kill_pid` (Lines 202-230), `kill_windows` (Lines 311-320)
 - **Description**: Three problems in one path. (1) **No graceful stop**:
@@ -139,7 +139,7 @@ destructive-action UX, and duplicated policy tables.
   `public/fonts/`, switch to local `@font-face`, and delete the two Google origins from all
   three CSP definitions.
 
-## [ ] Task: Restart and the poll loop re-run full scans several times per operation
+## [x] Task: Restart and the poll loop re-run full scans several times per operation
 
 - **Location**: `src-tauri/src/scanner.rs` — `restart_trusted` (Lines 773-812), `kill_pid` (Line 219), `port_is_listening` (Line 768); `src-tauri/src/tray.rs` (Lines 127-191)
 - **Description**: One `restart_process` performs a process refresh, then
@@ -184,7 +184,7 @@ destructive-action UX, and duplicated policy tables.
   `@tauri-apps/api/window` needs beyond the six listed) and confirm the app still starts.
   Re-audit when new APIs are introduced.
 
-## [ ] Task: Per-endpoint traffic samples are merged by array index
+## [x] Task: Per-endpoint traffic samples are merged by array index
 
 - **Location**: `src-tauri/src/logger.rs` — `get_traffic` (Lines 184-202)
 - **Description**: When several PIDs listen on one port, `get_traffic` sums their samples
