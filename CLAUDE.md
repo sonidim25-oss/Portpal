@@ -41,7 +41,7 @@ shipped binary. That is gone, along with the `greet` command and the
 `tauri_plugin_opener` / `tauri_plugin_dialog` registrations. If you find guidance
 elsewhere about "adding a command to both files", it is out of date.
 
-New window or plugin APIs also need a permission added to `src-tauri/capabilities/default.json`, or the IPC call is silently denied at runtime.
+New window or plugin APIs also need a permission added to `src-tauri/capabilities/default.json`, or the IPC call is silently denied at runtime. That file is an **exact** list — one `allow-*` per caller, no aggregate `:default` sets — enforced by `src/test/capabilities.test.ts`. See `docs/ipc-capabilities.md`.
 
 Other things that surprise people:
 
