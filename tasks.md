@@ -15,9 +15,10 @@ Status legend: `[ ]` open · `[x]` done · `[~]` resolved outside this work
 | Priority | Total | Done | Open |
 |---|---|---|---|
 | EXTRA HIGH | 1 | 1 | 0 |
-| HIGH | 5 | 4 | 1 |
+| HIGH | 5 | 5 | 0 |
 | MEDIUM | 15 | 1 | 14 |
-| LOW | 10 | 9 | 1 |
+| LOW | 10 | 10 | 0 |
+| **Total** | **31** | **17** | **14** |
 
 General note: the shipped `src-tauri` and `src` code is unusually well hardened. The
 restart path is a trusted-store replay with a real jail, the PID 0/1 policy is coherent,
@@ -510,7 +511,7 @@ tables.
   (`.exe` NSIS and `.AppImage`, noting macOS builds from source); Port Map section marked as
   temporarily disabled in v0.2; logs description clarified to match actual events emitted.
 
-## [ ] Task: `restartPort` returns silently when a port is not restartable
+## [x] Task: `restartPort` returns silently when a port is not restartable
 
 - **Location**: `src/app/usePortPalData.ts` (Line 225)
 - **Description**: The guard returns early when `start_cmd` or `project_path` is missing —
@@ -519,6 +520,13 @@ tables.
   future caller) produces a button press with no observable consequence.
 - **Suggested Fix**: Emit a toast explaining why restart is unavailable, matching how every
   other failure in this hook reports itself.
+- **Status**: **Done and tested.** The bare early return now names which half is missing:
+  no `start_cmd` gives "Can't restart X: PortPal did not record how it was started", no
+  `project_path` gives "…: no project folder was found for it". Falls back to
+  `process_name` when there is no project name, matching the surrounding toasts. `label`
+  was hoisted since the same expression appeared three times in the function. 3 tests
+  added covering the toast firing with `restarting` left empty, each cause producing its
+  own message, and the process-name fallback.
 
 ## [x] Task: Generated and duplicate directories are untracked but not ignored
 
