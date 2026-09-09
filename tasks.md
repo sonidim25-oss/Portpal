@@ -170,7 +170,7 @@ destructive-action UX, and duplicated policy tables.
   a reload action, and render the window controls outside it (or duplicate them in the
   fallback) so the chrome survives a content crash.
 
-## [ ] Task: Tauri capability grants `core:default` rather than the permissions used
+## [x] Task: Tauri capability grants `core:default` rather than the permissions used
 
 - **Location**: `src-tauri/capabilities/default.json` (Lines 6-14)
 - **Description**: The capability lists six specific `core:window:*` permissions and then
