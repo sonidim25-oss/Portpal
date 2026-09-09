@@ -30,14 +30,17 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function observedStarts(events: PortEvent[]): Record<number, number> {
+function observedStarts(events: PortEvent[], initial: Record<number, number> = {}): Record<number, number> {
   // Keyed by port number: conflicting listeners on the same port share one
   // observed-at timestamp. Conflict-safe because the timestamp describes the
   // endpoint, while identity-sensitive logic (selection, keys) is pid-aware.
+  // Take Math.max so the newest start timestamp wins regardless of array order.
   return events.reduce<Record<number, number>>((observedAt, event) => {
-    if (event.event_type === 'started') observedAt[event.port] = event.timestamp;
+    if (event.event_type === 'started') {
+      observedAt[event.port] = Math.max(observedAt[event.port] ?? 0, event.timestamp);
+    }
     return observedAt;
-  }, {});
+  }, { ...initial });
 }
 
 export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): UsePortPalDataResult {
@@ -85,7 +88,7 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
     try {
       const result = await gateway.getPortEvents();
       setEvents(result);
-      setObservedAt((current) => ({ ...current, ...observedStarts(result) }));
+      setObservedAt((current) => observedStarts(result, current));
       setErrors((current) => ({ ...current, events: null }));
     } catch (error) {
       setErrors((current) => ({ ...current, events: errorMessage(error) }));
@@ -157,7 +160,7 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
 
     subscribe(gateway.onPortEvents((updatedEvents) => {
       setEvents((current) => [...updatedEvents, ...current].slice(0, 200));
-      setObservedAt((current) => ({ ...current, ...observedStarts(updatedEvents) }));
+      setObservedAt((current) => observedStarts(updatedEvents, current));
     }), (unlisten) => { unlistenEvents = unlisten; }, 'port events');
 
     // The scanner cannot report a failed scan as an empty list, so a break in
