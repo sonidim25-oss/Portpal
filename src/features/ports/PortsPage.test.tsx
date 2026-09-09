@@ -191,6 +191,8 @@ describe("PortsPage", () => {
     const { onKill, onRestart } = renderPorts({ killedPorts: new Map([[stoppedPort.port, stoppedPort]]) });
 
     await user.click(screen.getByRole("button", { name: "Kill port 3000" }));
+    expect(screen.getByRole("alertdialog", { name: "Confirm process termination" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
     expect(onKill).toHaveBeenCalledWith(devPort);
 
     expect(screen.queryByRole("button", { name: "Restart port 49664" })).not.toBeInTheDocument();
@@ -210,6 +212,9 @@ describe("PortsPage", () => {
 
     killButton.focus();
     await user.keyboard("{Enter}");
+
+    expect(screen.getByRole("alertdialog", { name: "Confirm process termination" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
 
     expect(onKill).toHaveBeenCalledWith(devPort);
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
@@ -288,19 +293,22 @@ describe("PortsPage", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Killed 1, failed 0, skipped critical 1, skipped busy 1");
   });
 
-  it("warns on individual critical kills and keeps keyboard focus inside confirmation", async () => {
+  it("routes critical kills directly to onKill without confirm dialog and keeps keyboard focus inside confirmation", async () => {
     const user = userEvent.setup();
     const { onKill } = renderPorts();
     await user.click(screen.getByRole("button", { name: "Kill port 49664" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(onKill).toHaveBeenCalledWith(systemPort);
+
+    await user.click(screen.getByRole("button", { name: "Kill port 3000" }));
     const dialog = screen.getByRole("alertdialog");
-    expect(within(dialog).getByText("lsass.exe")).toBeVisible();
+    expect(within(dialog).getByText(/1 unique process selected/)).toBeVisible();
     await user.tab({ shift: true });
     expect(within(dialog).getByRole("button", { name: "Confirm" })).toHaveFocus();
     await user.tab();
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
     await user.click(within(dialog).getByRole("button", { name: "Confirm" }));
-    expect(onKill).not.toHaveBeenCalled();
-    expect(screen.getByRole("status")).toHaveTextContent("skipped critical 1");
+    expect(onKill).toHaveBeenCalledWith(devPort);
   });
 
   it("settles bulk failures sequentially and reports truthful counts", async () => {

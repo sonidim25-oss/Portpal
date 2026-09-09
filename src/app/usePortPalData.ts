@@ -193,13 +193,20 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
     }
     pendingKills.current.add(port.pid);
     setKilling((current) => new Set(current).add(port.pid));
+    // All live endpoints sharing this PID die together; snapshot them first
+    // so every affected port gets its own STOPPED row for restore.
+    const siblings = [port, ...ports.filter((p) => p.pid === port.pid && p.port !== port.port)];
     try {
       await gateway.killProcess(port.pid);
       showToast(`Killed ${port.process_name} on :${port.port}`);
       setPorts((current) => current.filter((item) => item.pid !== port.pid));
-      if (port.start_cmd && port.project_path) {
-        setKilledPorts((current) => new Map(current).set(port.port, port));
-      }
+      setKilledPorts((current) => {
+        const next = new Map(current);
+        for (const endpoint of siblings) {
+          if (endpoint.start_cmd && endpoint.project_path) next.set(endpoint.port, endpoint);
+        }
+        return next;
+      });
       return 'killed';
     } catch (error) {
       showToast(`Failed to kill PID ${port.pid}: ${errorMessage(error)}`);

@@ -1,4 +1,9 @@
+// `parse_port` serves the Unix scanner and the test helpers; the Windows
+// scanner parses whole rows through `parse_netstat_tcp_row` instead.
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 use crate::netaddr::parse_port;
+#[cfg(target_os = "windows")]
+use crate::netaddr::parse_netstat_tcp_row;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -233,28 +238,20 @@ pub fn kill_pid(pid: u32) -> Result<(), KillError> {
 
 #[cfg(target_os = "windows")]
 fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo>, ScanError> {
-    // TCP only: `LISTENING` is a TCP connection state, so this filter can
-    // never match a UDP row even though `netstat -ano` prints them. See the
-    // scope note on `try_scan_ports`.
+    // TCP only, and locale-independent: `parse_netstat_tcp_row` matches the
+    // Proto column (never translated) and identifies a listener by its null
+    // Foreign Address rather than by the State text, which Windows translates.
+    // Reading that text reported zero ports on every non-English install.
+    // UDP rows carry no State column and are rejected. See the scope note on
+    // `try_scan_ports`.
     let stdout = run_scan_tool("netstat", &["-ano"])?;
     let mut ports: Vec<PortInfo> = Vec::new();
     let mut seen_entries: HashSet<(u16, u32)> = HashSet::new();
 
     for line in stdout.lines() {
-        if !line.contains("LISTENING") { continue; }
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 5 { continue; }
-
-        // Local Address is IPv4, bracketed IPv6, or zone-scoped IPv6.
-        let port: u16 = match parse_port(parts[1]) {
-            Some(p) => p,
-            None => continue,
-        };
-
-        let pid: u32 = match parts[4].parse() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
+        let Some(row) = parse_netstat_tcp_row(line) else { continue };
+        if !row.is_listener() { continue; }
+        let (port, pid) = (row.local_port, row.pid);
 
         if is_unattributed_pid(pid) || seen_entries.contains(&(port, pid)) { continue; }
         seen_entries.insert((port, pid));
@@ -327,6 +324,9 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo
     let stdout = run_scan_tool("lsof", &["-iTCP", "-sTCP:LISTEN", "-n", "-P"])?;
     let mut ports: Vec<PortInfo> = Vec::new();
     let mut seen_entries: HashSet<(u16, u32)> = HashSet::new();
+    // PIDs whose working directory `sysinfo` could not supply, resolved in one
+    // batch after the loop.
+    let mut needs_cwd: Vec<u32> = Vec::new();
 
     for line in stdout.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -376,47 +376,121 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo
             }
         }
 
+        // Note the gap rather than filling it here: resolving a cwd used to
+        // cost a process spawn per row on macOS, inside this loop, on a 2s
+        // timer. They are resolved together after the loop instead.
         if project_path.is_none() {
-            project_path = get_project_path_unix_fallback(pid);
+            needs_cwd.push(pid);
         }
-
-        let project_name = extract_project_name(&project_path);
 
         ports.push(PortInfo {
             port, pid, process_name,
-            project_path, project_name,
+            project_path,
+            // Derived from project_path once the batch below has had its say.
+            project_name: None,
             protocol: "TCP".into(),
             start_cmd,
         });
+    }
+
+    // One resolution pass for every row `sysinfo` could not place.
+    if !needs_cwd.is_empty() {
+        needs_cwd.sort_unstable();
+        needs_cwd.dedup();
+        let cwds = resolve_cwds(&needs_cwd);
+        for port in ports.iter_mut().filter(|p| p.project_path.is_none()) {
+            if let Some(cwd) = cwds.get(&port.pid) {
+                // `find_project_root` is memoized, so listeners sharing a
+                // project directory probe the filesystem only once.
+                port.project_path = find_project_root(cwd).map(|p| p.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    for port in &mut ports {
+        port.project_name = extract_project_name(&port.project_path);
     }
 
     ports.sort_by_key(|p| p.port);
     Ok(ports)
 }
 
+/// Resolves working directories for the `pids` `sysinfo` could not place.
+///
+/// One call for the whole scan, not one per process. On Linux this is a
+/// `/proc/<pid>/cwd` readlink per pid, which spawns nothing. macOS has no
+/// `/proc`, so it is a single `lsof` covering every pid at once — the previous
+/// code ran one `lsof` per pid from inside the scan's row loop, so a Mac with
+/// 30-80 listeners paid that many process spawns every two seconds.
+///
+/// A pid missing from the returned map simply has no project attributed to it,
+/// which is the same outcome the per-pid version produced on failure.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn get_project_path_unix_fallback(pid: u32) -> Option<String> {
+fn resolve_cwds(pids: &[u32]) -> HashMap<u32, PathBuf> {
+    if pids.is_empty() {
+        return HashMap::new();
+    }
+
     #[cfg(target_os = "linux")]
     {
-        let cwd = std::fs::read_link(format!("/proc/{}/cwd", pid)).ok()?;
-        find_project_root(std::path::Path::new(&cwd)).map(|p| p.to_string_lossy().to_string())
+        let mut out = HashMap::with_capacity(pids.len());
+        for &pid in pids {
+            if let Ok(cwd) = std::fs::read_link(format!("/proc/{}/cwd", pid)) {
+                out.insert(pid, cwd);
+            }
+        }
+        out
     }
 
     #[cfg(target_os = "macos")]
     {
-        let output = Command::new("lsof")
-            .args(["-p", &pid.to_string(), "-a", "-d", "cwd", "-Fn"])
+        // `-p` takes a comma-separated set, so the whole scan is one spawn.
+        let list = pids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+        match Command::new("lsof")
+            .args(["-p", &list, "-a", "-d", "cwd", "-Fpn"])
             .output()
-            .ok()?;
-
-        let s = String::from_utf8_lossy(&output.stdout);
-        let cwd = s.lines()
-            .find(|l| l.starts_with('n') && l.len() > 1)
-            .map(|l| l[1..].to_string())?;
-
-        find_project_root(std::path::Path::new(&cwd))
-            .map(|p| p.to_string_lossy().to_string())
+        {
+            // A non-zero exit still prints the pids it could read, and lsof
+            // exits non-zero whenever any pid was unreadable, so stdout is
+            // parsed either way rather than discarded.
+            Ok(output) => parse_lsof_cwd_records(&String::from_utf8_lossy(&output.stdout)),
+            Err(_) => HashMap::new(),
+        }
     }
+}
+
+/// Parses `lsof -Fpn` output into a pid to working-directory map.
+///
+/// In `-F` output every line is one field, identified by its first character:
+/// `p` opens a process block and `n` names a file in it. Because `-d cwd`
+/// selects exactly one descriptor per process, the `n` line that follows a `p`
+/// line belongs to that pid.
+///
+/// Kept free of platform APIs and compiled under `cfg(test)` so it is covered
+/// on any host, including the Windows machines where the Unix scanner around it
+/// never compiles at all. Linux is deliberately excluded: `resolve_cwds` reads
+/// `/proc` there and never calls this, so compiling it would be dead code.
+#[cfg(any(target_os = "macos", test))]
+fn parse_lsof_cwd_records(stdout: &str) -> HashMap<u32, PathBuf> {
+    let mut out = HashMap::new();
+    let mut current: Option<u32> = None;
+    for line in stdout.lines() {
+        let mut chars = line.chars();
+        let Some(tag) = chars.next() else { continue };
+        let rest = chars.as_str();
+        match tag {
+            // An unparseable pid clears the block so its path is not
+            // misattributed to whichever process was named before it.
+            'p' => current = rest.parse().ok(),
+            'n' if !rest.is_empty() => {
+                if let Some(pid) = current {
+                    out.insert(pid, PathBuf::from(rest));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// How long a process gets to exit on its own after SIGTERM before SIGKILL.
@@ -490,7 +564,42 @@ fn process_exists_unix(pid: u32) -> bool {
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
+/// Memoized project-root probe: scans run every 2s with dozens of processes,
+/// and each uncached probe is up to 6 levels x 8 markers of `exists()` I/O.
+/// Cache is keyed by the raw start path (not canonicalized), so the same
+/// directory reached via different spellings / symlinks probes once per
+/// spelling. The map is size-capped at ~512 entries by clearing the whole map
+/// on overflow (full flush, not LRU eviction).
+/// Cache hits are returned as-is with no existence check, so scan callers
+/// display whatever was found at probe time: a renamed/deleted folder shows a
+/// stale path until the entry is flushed. Only `build_launch_record`
+/// revalidates, by canonicalizing the returned root (fail-closed, so restart
+/// stays unavailable when the path is gone).
+fn project_root_cache() -> &'static Mutex<HashMap<PathBuf, Option<PathBuf>>> {
+    static CACHE: LazyLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    &CACHE
+}
+
 fn find_project_root(start: &std::path::Path) -> Option<std::path::PathBuf> {
+    // Fast path: memoized probe (cap ~512 entries, full clear on overflow).
+    let key = start.to_path_buf();
+    if let Ok(cache) = project_root_cache().lock() {
+        if let Some(hit) = cache.get(&key) {
+            return hit.clone();
+        }
+    }
+    let found = find_project_root_uncached(start);
+    if let Ok(mut cache) = project_root_cache().lock() {
+        if cache.len() > 512 {
+            cache.clear();
+        }
+        cache.insert(key, found.clone());
+    }
+    found
+}
+
+fn find_project_root_uncached(start: &std::path::Path) -> Option<std::path::PathBuf> {
     let markers = [
         "package.json", "Cargo.toml", "go.mod",
         "pyproject.toml", "requirements.txt",
@@ -1347,6 +1456,73 @@ mod tests {
         assert!(seen.insert((5173, 1234))); // different port, same pid
         assert_eq!(seen.len(), 3);
     }
+
+    // ─── lsof -Fpn cwd records ───────────────────────────────────────────
+
+    #[test]
+    fn parses_a_batched_lsof_cwd_listing() {
+        // One spawn now covers every pid, so the parser has to keep each
+        // path with the process block it appeared under.
+        let out = parse_lsof_cwd_records("p501
+n/Users/me/projects/api
+p777
+n/Users/me/projects/web
+");
+        assert_eq!(out.len(), 2);
+        assert_eq!(out.get(&501), Some(&PathBuf::from("/Users/me/projects/api")));
+        assert_eq!(out.get(&777), Some(&PathBuf::from("/Users/me/projects/web")));
+    }
+
+    #[test]
+    fn keeps_paths_that_contain_spaces() {
+        // `-F` output is one field per line, so a space is part of the path
+        // and must not be tokenized away.
+        let out = parse_lsof_cwd_records("p42
+n/Users/me/My Project/server
+");
+        assert_eq!(out.get(&42), Some(&PathBuf::from("/Users/me/My Project/server")));
+    }
+
+    #[test]
+    fn omits_a_process_whose_cwd_was_not_reported() {
+        // lsof prints the process block but no `n` line for a directory it
+        // could not read; that pid simply gets no project attributed.
+        let out = parse_lsof_cwd_records("p501
+n/Users/me/a
+p502
+p503
+n/Users/me/c
+");
+        assert_eq!(out.len(), 2);
+        assert_eq!(out.get(&501), Some(&PathBuf::from("/Users/me/a")));
+        assert_eq!(out.get(&502), None);
+        assert_eq!(out.get(&503), Some(&PathBuf::from("/Users/me/c")));
+    }
+
+    #[test]
+    fn an_unreadable_pid_line_does_not_misattribute_the_path_below_it() {
+        let out = parse_lsof_cwd_records("p501
+n/Users/me/a
+pBOGUS
+n/Users/me/orphan
+");
+        assert_eq!(out.get(&501), Some(&PathBuf::from("/Users/me/a")));
+        assert_eq!(out.len(), 1, "orphaned path was attributed to a process: {out:?}");
+    }
+
+    #[test]
+    fn ignores_empty_input_and_unrelated_field_lines() {
+        assert!(parse_lsof_cwd_records("").is_empty());
+        assert!(parse_lsof_cwd_records("
+
+").is_empty());
+        // A bare `n` with no path, and fields we did not ask for.
+        assert!(parse_lsof_cwd_records("p501
+fcwd
+n
+").is_empty());
+    }
+
 }
 
 

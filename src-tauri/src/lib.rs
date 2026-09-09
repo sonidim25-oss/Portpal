@@ -68,13 +68,17 @@ async fn get_port_graph() -> Result<connections::PortGraph, scanner::ScanError> 
 
 #[tauri::command]
 fn get_port_events() -> Vec<logger::PortEvent> {
-    let lg = logger::LOGGER.lock().unwrap();
+    let lg = logger::LOGGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     lg.get_events()
 }
 
 #[tauri::command]
 fn get_port_traffic() -> HashMap<u16, Vec<logger::TrafficSample>> {
-    let lg = logger::LOGGER.lock().unwrap();
+    let lg = logger::LOGGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     lg.get_all_traffic()
 }
 

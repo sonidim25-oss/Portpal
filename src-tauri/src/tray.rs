@@ -29,11 +29,23 @@ impl DebounceState {
     }
 }
 
+/// Tray liveness derives from the graph's taxonomy table
+/// (`connections::is_dev_port`), so icon state, tooltip count, and graph
+/// liveness can never diverge into per-surface port lists.
+fn is_tray_dev_port(port: u16) -> bool {
+    crate::connections::is_dev_port(port)
+}
+
+/// Poison-tolerant mutex access: a panic while holding the lock must degrade
+/// to the last good state, never wedge the watcher into permanent panics.
+fn lock_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| {
+        eprintln!("PortPal: recovered poisoned mutex; continuing with last good state");
+        poisoned.into_inner()
+    })
+}
+
 fn compute_state(ports: &[PortInfo]) -> TrafficState {
-    let dev_ports = [
-        3000u16, 3001, 4000, 4200, 5173, 5174,
-        8000, 8080, 8888, 5432, 3306, 6379, 27017, 1420,
-    ];
 
     // Check for conflict: same port bound twice
     let mut seen = std::collections::HashSet::new();
@@ -44,7 +56,7 @@ fn compute_state(ports: &[PortInfo]) -> TrafficState {
     }
 
     // Active: any known dev port is in use
-    if ports.iter().any(|p| dev_ports.contains(&p.port)) {
+    if ports.iter().any(|p| is_tray_dev_port(p.port)) {
         return TrafficState::Active;
     }
 
@@ -140,12 +152,14 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
             let new_state = compute_state(&ports);
             let port_count = ports.iter()
-                .filter(|p| [3000u16,3001,4000,4200,5173,5174,
-                              8000,8080,5432,3306,6379,27017,1420]
-                    .contains(&p.port))
+                .filter(|p| is_tray_dev_port(p.port))
                 .count();
 
-            // Update the logger with current ports and connection counts
+            // Update the logger with current ports and connection counts.
+            // One snapshot per tick: `ports` comes from a single
+            // try_scan_ports() call and is reused for both the logger tuples
+            // and the graph input, so listing and connection stages can never
+            // disagree about what is live.
             {
                 let port_tuples: Vec<(u16, u32, String, Option<String>)> = ports.iter()
                     .map(|p| {
@@ -154,17 +168,20 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     })
                     .collect();
 
-                // Get connection counts from the graph
+                // Get connection counts from the graph (single connection-tool
+                // spawn per tick, inside get_port_graph).
                 let listening: Vec<(u16, u32, String, Option<String>)> = ports.iter()
                     .map(|p| (p.port, p.pid, p.process_name.clone(), p.project_name.clone()))
                     .collect();
                 let graph = crate::connections::get_port_graph(&listening);
+                // Sum across conflicting PIDs sharing a port (last-wins would
+                // undercount conflicts to a single endpoint's share).
                 let mut conn_counts = std::collections::HashMap::new();
                 for node in &graph.nodes {
-                    conn_counts.insert(node.port, node.connection_count);
+                    *conn_counts.entry(node.port).or_insert(0) += node.connection_count;
                 }
 
-                let mut logger = crate::logger::LOGGER.lock().unwrap();
+                let mut logger = lock_recover(&crate::logger::LOGGER);
                 let new_events = logger.update(&port_tuples, &conn_counts);
 
                 // Emit new events to the frontend
@@ -174,7 +191,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             }
 
             let should_update = {
-                let mut db = debounce.lock().unwrap();
+                let mut db = lock_recover(&debounce);
 
                 if db.pending != new_state {
                     // State changed — reset debounce timer
@@ -208,7 +225,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
             // Only emit port updates to frontend if data changed
             if let Ok(json) = serde_json::to_string(&ports) {
-                let mut last = last_ports_json.lock().unwrap();
+                let mut last = lock_recover(&last_ports_json);
                 if *last != json {
                     *last = json;
                     let _ = app_handle.emit("ports-updated", &ports);
@@ -278,5 +295,25 @@ mod tests {
         let db = DebounceState::new();
         assert_eq!(db.current, TrafficState::Clear);
         assert_eq!(db.pending, TrafficState::Clear);
+    }
+
+    #[test]
+    fn icon_and_tooltip_agree_on_8888() {
+        // Regression: tooltip counter once omitted 8888 while compute_state
+        // treated it as dev, yielding Active icon with "0 dev ports".
+        // Both now derive from connections::is_dev_port.
+        let ports = vec![p(8888)];
+        assert_eq!(compute_state(&ports), TrafficState::Active);
+        let count = ports.iter().filter(|p| is_tray_dev_port(p.port)).count();
+        assert_eq!(count, 1);
+        assert_eq!(get_tooltip(&TrafficState::Active, count), "PortPal — 1 dev port active");
+    }
+
+    #[test]
+    fn tray_taxonomy_matches_graph() {
+        // Backend surfaces must agree: every graph dev port is a tray dev port.
+        for (port, _) in crate::connections::dev_ports() {
+            assert!(is_tray_dev_port(*port), "tray missing graph dev port {port}");
+        }
     }
 }

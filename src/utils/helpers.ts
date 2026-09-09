@@ -130,11 +130,9 @@ export function groupPortsByService(ports: PortInfo[]): ServiceGroup[] {
 }
 
 export function getStatus(port: PortInfo): { label: string; cls: string } {
-  const dev = DEV_PORTS[port.port];
-  if (dev && [5432, 3306, 6379, 27017].includes(port.port)) {
-    return { label: "ACTIVE", cls: "status-active" };
-  }
-  if (dev) return { label: "ACTIVE", cls: "status-active" };
+  // Every row is a live TCP listener; the label distinguishes curated
+  // (dev/system taxonomy) listeners from uncatalogued ones.
+  if (DEV_PORTS[port.port]) return { label: "ACTIVE", cls: "status-active" };
   return { label: "LISTENING", cls: "status-listening" };
 }
 

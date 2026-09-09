@@ -42,12 +42,20 @@ impl PortTraffic {
     }
 }
 
+/// Stable endpoint identity: ports are NOT unique (SO_REUSEADDR conflicts,
+/// v4/v6 dual-binds, stale rows), matching the graph's `(port, pid)` NodeKey.
+/// All tracking maps are keyed by endpoint so PID rotation emits lifecycle
+/// events and conflicting listeners never collapse into one entry.
+pub type EndpointKey = (u16, u32);
+
 /// Global store for port events and traffic
 pub struct PortLogger {
     events: Vec<PortEvent>,
-    prev_ports: HashMap<u16, (u32, String)>, // port -> (pid, process_name)
-    traffic: HashMap<u16, PortTraffic>,
-    first_seen: HashMap<u16, u64>,
+    prev_ports: HashMap<EndpointKey, (String, Option<String>)>, // (port,pid) -> (process_name, framework)
+    traffic: HashMap<EndpointKey, PortTraffic>,
+    first_seen: HashMap<EndpointKey, u64>,
+    /// Ports observed with >1 live PID on the last tick (for conflict edges).
+    conflicts: std::collections::HashSet<u16>,
 }
 
 impl PortLogger {
@@ -57,11 +65,13 @@ impl PortLogger {
             prev_ports: HashMap::new(),
             traffic: HashMap::new(),
             first_seen: HashMap::new(),
+            conflicts: std::collections::HashSet::new(),
         }
     }
 
     /// Call this every scan cycle with the current port list and connection counts.
     /// Returns any new events generated.
+    /// `conn_counts` is keyed by port (aggregated across conflicting PIDs).
     pub fn update(
         &mut self,
         ports: &[(u16, u32, String, Option<String>)],
@@ -70,15 +80,18 @@ impl PortLogger {
         let ts = now_millis();
         let mut new_events = Vec::new();
 
-        // Build current port set
-        let mut current: HashMap<u16, (u32, String, Option<String>)> = HashMap::new();
+        // Build current endpoint set keyed by (port, pid)
+        let mut current: HashMap<EndpointKey, (String, Option<String>)> = HashMap::new();
+        let mut port_to_pids: HashMap<u16, Vec<u32>> = HashMap::new();
         for (port, pid, name, fw) in ports {
-            current.insert(*port, (*pid, name.clone(), fw.clone()));
+            current.insert((*port, *pid), (name.clone(), fw.clone()));
+            port_to_pids.entry(*port).or_default().push(*pid);
         }
 
-        // Detect new ports (started)
-        for (port, (pid, name, fw)) in &current {
-            if !self.prev_ports.contains_key(port) {
+        // Detect new endpoints (started) — PID rotation on the same port is a
+        // new endpoint, so it correctly emits `started` instead of going silent.
+        for ((port, pid), (name, fw)) in &current {
+            if !self.prev_ports.contains_key(&(*port, *pid)) {
                 let event = PortEvent {
                     port: *port,
                     pid: *pid,
@@ -89,13 +102,13 @@ impl PortLogger {
                 };
                 self.events.push(event.clone());
                 new_events.push(event);
-                self.first_seen.entry(*port).or_insert(ts);
+                self.first_seen.entry((*port, *pid)).or_insert(ts);
             }
         }
 
-        // Detect removed ports (stopped)
-        for (port, (pid, name)) in &self.prev_ports {
-            if !current.contains_key(port) {
+        // Detect removed endpoints (stopped)
+        for ((port, pid), (name, _)) in &self.prev_ports {
+            if !current.contains_key(&(*port, *pid)) {
                 let event = PortEvent {
                     port: *port,
                     pid: *pid,
@@ -109,16 +122,49 @@ impl PortLogger {
             }
         }
 
-        // Update traffic samples
-        for (port, _) in &current {
-            let conns = conn_counts.get(port).copied().unwrap_or(0);
-            self.traffic.entry(*port).or_insert_with(PortTraffic::new).push(conns);
+        // Detect conflicts: same port with >1 live PID
+        let mut new_conflicts = std::collections::HashSet::new();
+        for (port, pids) in &port_to_pids {
+            if pids.len() > 1 {
+                new_conflicts.insert(*port);
+                if !self.conflicts.contains(port) {
+                    // One conflict event per port (pid = lowest for stability)
+                    let pid = *pids.iter().min().unwrap_or(&0);
+                    let name = current.get(&(*port, pid))
+                        .map(|(n, _)| n.clone()).unwrap_or_default();
+                    let event = PortEvent {
+                        port: *port,
+                        pid,
+                        process_name: name,
+                        framework: None,
+                        event_type: "conflict".into(),
+                        timestamp: ts,
+                    };
+                    self.events.push(event.clone());
+                    new_events.push(event);
+                }
+            }
+        }
+        self.conflicts = new_conflicts;
+
+        // Update traffic samples per endpoint
+        for (key, _) in &current {
+            // Per-endpoint share is unknown from aggregated counts; each live
+            // endpoint records the port aggregate so per-port sums stay exact
+            // and no endpoint silently reports zero while the port is busy.
+            // (Single-listener ports — the common case — are exact.)
+            let conns = conn_counts.get(&key.0).copied().unwrap_or(0);
+            self.traffic.entry(*key).or_insert_with(PortTraffic::new).push(conns);
         }
 
+        // Purge state for stopped endpoints so long sessions cannot leak keys
+        // and dead ports stop contributing to dashboard sums.
+        let live: std::collections::HashSet<EndpointKey> = current.keys().copied().collect();
+        self.traffic.retain(|key, _| live.contains(key));
+        self.first_seen.retain(|key, _| live.contains(key));
+
         // Update prev_ports
-        self.prev_ports = current.iter()
-            .map(|(port, (pid, name, _))| (*port, (*pid, name.clone())))
-            .collect();
+        self.prev_ports = current;
 
         // Trim events to last 200
         if self.events.len() > 200 {
@@ -136,19 +182,49 @@ impl PortLogger {
     }
 
     pub fn get_traffic(&self, port: u16) -> Vec<TrafficSample> {
-        self.traffic.get(&port)
-            .map(|t| t.samples.clone())
-            .unwrap_or_default()
+        // Merge across conflicting PIDs by sample index (sums), so the IPC
+        // contract stays per-port while endpoints are tracked per (port,pid).
+        let mut merged: Vec<TrafficSample> = Vec::new();
+        for ((p, _), t) in &self.traffic {
+            if *p != port {
+                continue;
+            }
+            for (i, s) in t.samples.iter().enumerate() {
+                if let Some(slot) = merged.get_mut(i) {
+                    slot.connections += s.connections;
+                    slot.timestamp = slot.timestamp.max(s.timestamp);
+                } else {
+                    merged.push(s.clone());
+                }
+            }
+        }
+        merged
     }
 
     pub fn get_all_traffic(&self) -> HashMap<u16, Vec<TrafficSample>> {
-        self.traffic.iter()
-            .map(|(port, t)| (*port, t.samples.clone()))
-            .collect()
+        // Aggregate per port; single-listener ports are exact.
+        let mut out: HashMap<u16, Vec<TrafficSample>> = HashMap::new();
+        let mut ports: Vec<u16> = self.traffic.keys().map(|(p, _)| *p).collect();
+        ports.sort_unstable();
+        ports.dedup();
+        for port in ports {
+            out.insert(port, self.get_traffic(port));
+        }
+        out
     }
 
     pub fn get_first_seen(&self, port: u16) -> Option<u64> {
-        self.first_seen.get(&port).copied()
+        // Earliest across live PIDs on this port (compat: frontend keys by port).
+        self.first_seen
+            .iter()
+            .filter(|((p, _), _)| *p == port)
+            .map(|(_, ts)| *ts)
+            .min()
+    }
+
+    /// Per-endpoint first-seen for pid-aware callers.
+    pub fn get_first_seen_endpoint(&self, port: u16, pid: u32) -> Option<u64> {
+        self.first_seen.get(&(port, pid)).copied()
     }
 }
 
@@ -240,6 +316,35 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(5));
         lg.update(&mk_ports(&[(3000, 111, "a")]), &HashMap::new());
         assert_eq!(lg.get_first_seen(3000).unwrap(), first);
+    }
+
+    #[test]
+    fn pid_rotation_emits_started() {
+        let mut lg = PortLogger::new();
+        lg.update(&mk_ports(&[(3000, 111, "node")]), &HashMap::new());
+        // Same port, new PID (restart): must emit started, not go silent.
+        let ev = lg.update(&mk_ports(&[(3000, 222, "node")]), &HashMap::new());
+        assert!(ev.iter().any(|e| e.event_type == "started" && e.pid == 222));
+        assert!(ev.iter().any(|e| e.event_type == "stopped" && e.pid == 111));
+    }
+
+    #[test]
+    fn conflict_emits_conflict_event() {
+        let mut lg = PortLogger::new();
+        let ev = lg.update(
+            &mk_ports(&[(3000, 111, "a"), (3000, 222, "b")]),
+            &HashMap::new(),
+        );
+        assert!(ev.iter().any(|e| e.event_type == "conflict" && e.port == 3000));
+    }
+
+    #[test]
+    fn stopped_endpoints_purge_traffic() {
+        let mut lg = PortLogger::new();
+        lg.update(&mk_ports(&[(3000, 111, "node")]), &HashMap::from([(3000, 5)]));
+        lg.update(&[], &HashMap::new());
+        assert!(lg.get_all_traffic().is_empty());
+        assert_eq!(lg.get_first_seen(3000), None);
     }
 
     #[test]

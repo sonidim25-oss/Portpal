@@ -74,6 +74,8 @@ describe('App integration - invoke + ports', () => {
 
     const killBtn = screen.getByRole('button', { name: 'Kill port 3000' });
     await user.click(killBtn);
+    expect(screen.getByRole('alertdialog', { name: 'Confirm process termination' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('kill_process', { pid: 1111 }));
     // killed port moves to dead row with STOPPED badge (kept for restart)

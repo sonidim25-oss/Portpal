@@ -1,4 +1,9 @@
+// `parse_port` serves the macOS and Linux connection parsers; the Windows
+// one parses whole rows through `parse_netstat_tcp_row`.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::netaddr::parse_port;
+#[cfg(target_os = "windows")]
+use crate::netaddr::parse_netstat_tcp_row;
 use crate::scanner::is_unattributed_pid;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -48,8 +53,14 @@ pub fn get_framework_name(port: u16) -> Option<String> {
     get_framework(port)
 }
 
-fn is_dev_port(port: u16) -> bool {
+pub fn is_dev_port(port: u16) -> bool {
     DEV_PORTS.iter().any(|(p, _)| *p == port)
+}
+
+/// Backend dev-port set for tray/liveness surfaces, so icon, tooltip, and
+/// graph liveness derive from the same table instead of three copies.
+pub fn dev_ports() -> &'static [(u16, &'static str)] {
+    DEV_PORTS
 }
 
 /// Stable endpoint identity: ports are NOT unique (SO_REUSEADDR conflicts,
@@ -62,7 +73,13 @@ fn node_id(port: u16, pid: u32) -> String {
     format!("port:{}:{}", port, pid)
 }
 
-/// One observed ESTABLISHED TCP connection.
+/// One observed live TCP connection.
+///
+/// "Live" rather than strictly ESTABLISHED: the Windows parser selects
+/// rows structurally, because the State column it would otherwise match is
+/// translated on non-English installs. macOS and Linux still select
+/// ESTABLISHED exactly, via `lsof -sTCP:ESTABLISHED` and `ss state
+/// established`, which take the state as an argument rather than as output.
 ///
 /// `src_pid`/`dst_pid` are `None` when the platform tool did not attribute
 /// that side of the connection to a process — `lsof` never names the remote
@@ -243,24 +260,23 @@ fn get_connections_windows() -> Vec<Connection> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // First pass: build a port→pid map from ESTABLISHED lines
+    // First pass: collect every TCP row that names a real peer.
     // netstat format: Proto  Local Address  Foreign Address  State  PID
     let mut raw_conns: Vec<(u16, u16, u32)> = Vec::new();
 
     for line in stdout.lines() {
-        if !line.contains("ESTABLISHED") { continue; }
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 5 { continue; }
-
-        let src_port = parse_port(parts[1]);
-        let dst_port = parse_port(parts[2]);
-        let pid: Option<u32> = parts[4].parse().ok();
-
-        if let (Some(s), Some(d), Some(p)) = (src_port, dst_port, pid) {
-            // A reserved PID owns no identity we can match a node against.
-            let Some(p) = attributed_pid(p) else { continue };
-            raw_conns.push((s, d, p));
-        }
+        let Some(row) = parse_netstat_tcp_row(line) else { continue };
+        // Selecting by the literal word ESTABLISHED found nothing on a
+        // non-English Windows, where the State column is translated. That
+        // column is no longer read: a row with a non-null Foreign Address has
+        // a real peer. This does admit the other live states (CLOSE_WAIT,
+        // SYN_SENT, FIN_WAIT) alongside ESTABLISHED, which is a slight
+        // widening. TIME_WAIT, much the most common of them, drops out just
+        // below because Windows leaves those sockets unattributed (PID 0).
+        if row.is_listener() { continue; }
+        // A reserved PID owns no identity we can match a node against.
+        let Some(pid) = attributed_pid(row.pid) else { continue };
+        raw_conns.push((row.local_port, row.foreign_port, pid));
     }
 
     // Build a port→pid lookup from all connections so we can find the PID for each side

@@ -64,8 +64,12 @@ export function PortsPage({
     });
   };
   const requestKill = async (port: PortInfo): Promise<void> => {
-    if (protectedListener(port)) setKillSelection([port]);
-    else await onKill(port);
+    if (protectedListener(port)) {
+      await onKill(port);
+      return;
+    }
+    setKillSummary(null);
+    setKillSelection([port]);
   };
   const confirmKills = async () => {
     if (!killSelection || bulkPending.current) return;
@@ -89,7 +93,9 @@ export function PortsPage({
           else killed++;
         } catch { failed++; }
       }
-      setKillSummary(`Killed ${killed}, failed ${failed}, skipped critical ${critical}, skipped busy ${busy}`);
+      if (targets.length > 1) {
+        setKillSummary(`Killed ${killed}, failed ${failed}, skipped critical ${critical}, skipped busy ${busy}`);
+      }
     } finally {
       bulkPending.current = false;
       setBulkBusy(false);

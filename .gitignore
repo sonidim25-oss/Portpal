@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Generated test / report output
+test-results/
+playwright-report/
+
+# Local-only design references (see docs/superpowers/specs/2026-09-02-portpal-monochrome-redesign-design.md)
+New assets/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

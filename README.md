@@ -4,9 +4,9 @@
 
 # ⚡ PortPal
 
-**Know what's running. Kill what's blocking. See how it's connected.**
+**Know what's running. Kill what's blocking.**
 
-A blazing-fast, native desktop dashboard built for modern developers. Stop playing detective with `netstat` and `lsof`. PortPal watches your ports, tracks traffic, and visualizes network topology — so you can just write code.
+A blazing-fast, native desktop dashboard built for modern developers. Stop playing detective with `netstat` and `lsof`. PortPal watches your ports and tracks connection activity — so you can just write code.
 
 [![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/wisher567/Portpal/releases)
 [![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/wisher567/Portpal/releases)
@@ -39,7 +39,7 @@ You open a project and *something* is already squatting on the port. Now you're 
 We've evolved from a simple port list to a full **Developer Command Center**:
 
 - 📈 **Traffic Sparklines:** Watch real-time connection activity with beautiful, animated SVG mini-charts natively embedded in your metrics.
-- 📋 **Historical Event Logging:** A dedicated logs page tracks every process start, stop, and connection spike along with timestamps and framework contexts.
+- 📋 **Historical Event Logging:** A dedicated logs page tracks every process start, stop, and port conflict along with timestamps and framework contexts.
 - 📦 **Categorized Services:** PortPal automatically groups active ports into cleanly contained UI cards by project and framework.
 - 🗂️ **Dev vs. System Isolation:** Quickly filter ports by 'Dev Frameworks' or 'Other System Apps', complete with a *Kill All* panic button.
 - 🎨 **Windowless Chrome:** Frameless application design with integrated native UI controls for a hyper-modern feel.
@@ -54,7 +54,10 @@ See every listening port on your machine at a glance — process name, PID, conn
 ### ⚡ One-Click Control
 Hover over any port and click **✕** to kill it instantly. If PortPal knows the start command, hit **↻** to restart it directly in a new terminal. Dead processes show a "stopped" badge with a persistent restart button.
 
-### 🗺️ Interactive Port Map (D3.js Topology)
+### 🗺️ Interactive Port Map (D3.js Topology) — temporarily disabled in v0.2
+
+> **Note:** The Port Map route is disabled in v0.2 builds (hidden from navigation in `src/App.tsx` / `src/components/shell/Sidebar.tsx`; code preserved in `src/features/port-map/`). What follows describes the planned feature, not what ships today.
+
 The crown jewel of PortPal. A D3.js-powered network topology visualization that shows precisely how your services are communicating.
 
 <div align="center">
@@ -101,18 +104,18 @@ visible but protected).
 </tr>
 <tr>
 <td align="center">
-<a href="https://github.com/wisher567/Portpal/releases/latest"><code>.msi</code> installer</a><br/>
-<a href="https://github.com/wisher567/Portpal/releases/latest"><code>.exe</code> setup</a>
+<a href="https://github.com/wisher567/Portpal/releases/latest"><code>.exe</code> setup (NSIS)</a>
 </td>
 <td align="center">
-<a href="https://github.com/wisher567/Portpal/releases/latest"><code>.dmg</code> Apple Silicon</a><br/>
-<a href="https://github.com/wisher567/Portpal/releases/latest"><code>.dmg</code> Intel</a>
+Build from source (no installer is produced — <code>bundle.targets</code> has no macOS target)
 </td>
 <td align="center">
-<a href="https://github.com/wisher567/Portpal/releases/latest"><code>.deb</code> / <code>.AppImage</code></a>
+<a href="https://github.com/wisher567/Portpal/releases/latest"><code>.AppImage</code></a>
 </td>
 </tr>
 </table>
+
+> **Note:** `src-tauri/tauri.conf.json` builds `bundle.targets = ["nsis", "appimage"]` only — there is no `.msi`, no `.dmg` (Apple Silicon / Intel), and no `.deb`. macOS users should build from source below.
 
 ### Build from Source
 
@@ -174,7 +177,7 @@ server executable instead of a shell wrapper.
 |-------|-----------|
 | **Runtime** | [Tauri 2](https://tauri.app) — Rust backend, native webview |
 | **Frontend** | React 19 + TypeScript + Vite 7 |
-| **Visualization** | D3.js v7 — Force-directed graph simulation |
+| **Visualization** | D3.js v7 — Force-directed graph simulation (Port Map, temporarily disabled in v0.2) |
 | **Styling** | Vanilla CSS — Custom Glassmorphism |
 | **Port Engine** | Custom native scanner via `sysinfo` + standard OS tools |
 | **Data Pipelines**| Singleton thread-safe event logger `lazy_static` |

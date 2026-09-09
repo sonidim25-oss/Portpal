@@ -94,6 +94,69 @@ fn is_ipv6_host(host: &str) -> bool {
     !base.is_empty() && base.parse::<Ipv6Addr>().is_ok()
 }
 
+// ─── netstat row parsing (Windows) ───────────────────────────────────────────
+
+/// One `netstat -ano` TCP row, reduced to the three fields PortPal needs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NetstatTcpRow {
+    pub local_port: u16,
+    pub foreign_port: u16,
+    pub pid: u32,
+}
+
+impl NetstatTcpRow {
+    /// True when this row is a listening socket.
+    ///
+    /// A TCP listener has no peer, so `netstat` prints its Foreign Address as
+    /// the null endpoint (`0.0.0.0:0`, or `[::]:0` for IPv6). Every other TCP
+    /// state names a real peer on a non-zero port. That structural difference
+    /// is what identifies a listener here, because the State column itself
+    /// cannot be read — see [`parse_netstat_tcp_row`].
+    pub fn is_listener(&self) -> bool {
+        self.foreign_port == 0
+    }
+}
+
+/// Parses one line of `netstat -ano` as a TCP row.
+///
+/// # Why the State column is never read
+///
+/// `netstat` translates its State column: `LISTENING` prints as `ABHÖREN` on
+/// German Windows, `ESCUCHANDO` on Spanish, `À L'ÉCOUTE` on French. Matching
+/// those words as text made PortPal report zero listening ports on every
+/// non-English Windows install — and it failed silently, because the tool
+/// still exited 0 with a full page of output, so no error path was ever
+/// reached. Nothing here reads that column.
+///
+/// The Proto column *is* safe to match: protocol names are not translated.
+///
+/// # Why the PID is taken from the end of the row
+///
+/// A translated state can span several whitespace-separated tokens (French
+/// `À L'ÉCOUTE` is two), which shifts every column after it. The PID is always
+/// the last token on the row, so it is read from there rather than by a fixed
+/// index.
+///
+/// Returns `None` for the banner, the header, UDP rows (which have no State
+/// column at all), and anything else that does not parse as a TCP row.
+pub fn parse_netstat_tcp_row(line: &str) -> Option<NetstatTcpRow> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    // Proto, Local Address, Foreign Address, State (one or more tokens), PID.
+    if parts.len() < 5 || !parts[0].eq_ignore_ascii_case("TCP") {
+        return None;
+    }
+    // A listener has no peer. Windows spells that Foreign Address `0.0.0.0:0`
+    // or `[::]:0`, both of which parse to port 0; `*:*` carries the same
+    // meaning and is accepted here so a listener is never dropped over
+    // spelling, since a rejected row would silently vanish from the port list.
+    let foreign_port = if parts[2] == "*:*" { 0 } else { parse_port(parts[2])? };
+    Some(NetstatTcpRow {
+        local_port: parse_port(parts[1])?,
+        foreign_port,
+        pid: parts[parts.len() - 1].parse().ok()?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,4 +240,108 @@ mod tests {
         assert_eq!(parse_port("0.0.0.0:0"), Some(0));
         assert_eq!(parse_port("2001:db8::1"), None);
     }
+
+    // ─── netstat row parsing ─────────────────────────────────────────────
+
+    // Real `netstat -ano` rows. Column widths vary by locale, so every test
+    // goes through split_whitespace rather than fixed offsets.
+    const EN_LISTEN: &str = "  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1052";
+    const EN_ESTAB: &str = "  TCP    192.168.1.5:52341      142.250.185.78:443     ESTABLISHED     6789";
+
+    #[test]
+    fn parses_english_listening_and_established_rows() {
+        let listen = parse_netstat_tcp_row(EN_LISTEN).expect("listening row");
+        assert_eq!(listen, NetstatTcpRow { local_port: 135, foreign_port: 0, pid: 1052 });
+        assert!(listen.is_listener());
+
+        let estab = parse_netstat_tcp_row(EN_ESTAB).expect("established row");
+        assert_eq!(estab, NetstatTcpRow { local_port: 52341, foreign_port: 443, pid: 6789 });
+        assert!(!estab.is_listener());
+    }
+
+    #[test]
+    fn listener_detection_survives_a_translated_state_column() {
+        // The bug this parser exists for: matching the literal word LISTENING
+        // reported zero listening ports on every non-English Windows install.
+        for row in [
+            "  TCP    0.0.0.0:135            0.0.0.0:0              ABHÖREN         1052",
+            "  TCP    0.0.0.0:135            0.0.0.0:0              ESCUCHANDO      1052",
+            "  TCP    0.0.0.0:135            0.0.0.0:0              IN ATTESA       1052",
+            "  TCP    0.0.0.0:135            0.0.0.0:0              À L'ÉCOUTE      1052",
+        ] {
+            let parsed = parse_netstat_tcp_row(row).expect(row);
+            assert!(parsed.is_listener(), "{row}");
+            assert_eq!(parsed.local_port, 135, "{row}");
+            // The PID must survive a state that spans several tokens, which is
+            // what shifts it off the fixed index the old parser assumed.
+            assert_eq!(parsed.pid, 1052, "{row}");
+        }
+    }
+
+    #[test]
+    fn connection_detection_survives_a_translated_state_column() {
+        for row in [
+            "  TCP    192.168.1.5:52341      142.250.185.78:443     HERGESTELLT     6789",
+            "  TCP    192.168.1.5:52341      142.250.185.78:443     ESTABLECIDO     6789",
+            "  TCP    192.168.1.5:52341      142.250.185.78:443     ÉTABLI          6789",
+        ] {
+            let parsed = parse_netstat_tcp_row(row).expect(row);
+            assert!(!parsed.is_listener(), "{row}");
+            assert_eq!(parsed.foreign_port, 443, "{row}");
+            assert_eq!(parsed.pid, 6789, "{row}");
+        }
+    }
+
+    #[test]
+    fn parses_ipv6_rows_in_both_roles() {
+        let listen = parse_netstat_tcp_row("  TCP    [::]:445               [::]:0                 LISTENING       4")
+            .expect("v6 listener");
+        assert_eq!(listen, NetstatTcpRow { local_port: 445, foreign_port: 0, pid: 4 });
+        assert!(listen.is_listener());
+
+        let estab = parse_netstat_tcp_row("  TCP    [fe80::1%12]:52350     [2606:4700::1111]:443  ESTABLISHED     900")
+            .expect("v6 connection");
+        assert_eq!(estab, NetstatTcpRow { local_port: 52350, foreign_port: 443, pid: 900 });
+        assert!(!estab.is_listener());
+    }
+
+    #[test]
+    fn rejects_rows_that_are_not_tcp() {
+        // UDP has no State column at all, so it is both too short and the
+        // wrong protocol. Protocol names are not translated, so matching the
+        // Proto column stays safe in every locale.
+        assert_eq!(parse_netstat_tcp_row("  UDP    0.0.0.0:5353           *:*                                    2345"), None);
+        assert_eq!(parse_netstat_tcp_row("  Proto  Local Address          Foreign Address        State           PID"), None);
+        assert_eq!(parse_netstat_tcp_row("Active Connections"), None);
+        assert_eq!(parse_netstat_tcp_row("Aktive Verbindungen"), None);
+        assert_eq!(parse_netstat_tcp_row(""), None);
+        assert_eq!(parse_netstat_tcp_row("   "), None);
+    }
+
+    #[test]
+    fn treats_a_wildcard_foreign_address_as_no_peer() {
+        let row = parse_netstat_tcp_row("  TCP    0.0.0.0:135            *:*                    LISTENING       1052")
+            .expect("wildcard foreign address");
+        assert_eq!(row, NetstatTcpRow { local_port: 135, foreign_port: 0, pid: 1052 });
+        assert!(row.is_listener());
+    }
+
+    #[test]
+    fn rejects_a_tcp_row_whose_pid_is_not_a_number() {
+        assert_eq!(
+            parse_netstat_tcp_row("  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       nope"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_time_wait_row_parses_and_keeps_its_zero_pid() {
+        // Windows leaves TIME_WAIT sockets unattributed. The row still parses;
+        // dropping PID 0 is the caller's policy (see scanner::is_unattributed_pid).
+        let row = parse_netstat_tcp_row("  TCP    192.168.1.5:52355      142.250.185.78:443     TIME_WAIT       0")
+            .expect("time_wait row");
+        assert_eq!(row.pid, 0);
+        assert!(!row.is_listener());
+    }
+
 }
