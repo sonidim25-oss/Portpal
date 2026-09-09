@@ -30,3 +30,11 @@ tempfile = "3"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 libc = "0.2"
+
+# Kill on Windows goes through a process handle rather than a PID, so the PID
+# cannot be recycled between validating a process and terminating it. Only the
+# two modules that declare OpenProcess/TerminateProcess/WaitForSingleObject and
+# CloseHandle are enabled; the crate is already in the dependency tree via
+# tauri/sysinfo, so this adds no new supply-chain surface.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }

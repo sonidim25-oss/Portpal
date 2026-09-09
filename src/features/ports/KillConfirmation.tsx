@@ -50,6 +50,14 @@ export function KillConfirmation({ count, protectedPorts, hiddenPorts, onCancel,
           <p>{count} unique process{count === 1 ? '' : 'es'} selected
             {totalPorts > count && <>, affecting <strong>{totalPorts} port{totalPorts === 1 ? '' : 's'} total</strong></>}.
             {totalPorts <= count && '.'} Termination can lose unsaved data and interrupt services.</p>
+          {/* The kill is per-process by design, not a process-tree kill: the
+              listener is what holds the port, and a tree kill would reach
+              processes that were never on screen. That choice has a cost the
+              dialog has to state, because it is the difference between "the
+              port is free" and "the port may still be held". See
+              docs/kill-policy.md. */}
+          <p>Only the selected process is stopped. Anything it started keeps running, and a
+            child that inherited the socket can hold the port open or restart the service.</p>
           {hiddenPorts.length > 0 && <>
             <p><strong>Also affected (hidden by current filter):</strong></p>
             <ul>{hiddenPorts.map((port) => <li key={`${port.pid}-${port.port}`}>:{port.port} — <strong>{port.process_name}</strong> (PID {port.pid})</li>)}</ul>
