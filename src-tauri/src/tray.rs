@@ -154,6 +154,16 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                         degraded = false;
                         let _ = app_handle.emit("scan-recovered", ());
                     }
+                    // Every completed scan, whether or not anything changed.
+                    // `ports-updated` below is deliberately gated on the data
+                    // differing — re-rendering the whole table every two
+                    // seconds for an identical list is waste — but the UI's
+                    // "Last scan" line was reading that same event, so on a
+                    // quiet machine it climbed to minutes while scanning was
+                    // perfectly healthy, which is what a stalled scanner looks
+                    // like. Liveness and change are different facts; this
+                    // carries the first one.
+                    let _ = app_handle.emit("scan-completed", ());
                     ports
                 }
                 Err(error) => {

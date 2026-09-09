@@ -57,7 +57,10 @@ Other things that surprise people:
   non-English install. Rows are parsed structurally by `netaddr::parse_netstat_tcp_row`.
 - Tray icons are `include_bytes!`-embedded from `src-tauri/icons/tray-{green,yellow,red}.png` — renaming those files is a compile error.
 - `tray.rs` runs a 2s polling thread that emits `ports-updated`, `port-events`,
-  `tray-state-changed`, `scan-degraded`, and `scan-recovered` to the frontend.
+  `tray-state-changed`, `scan-degraded`, `scan-recovered`, and `scan-completed` to the
+  frontend. **`ports-updated` fires only when the port list actually differs**, so it is
+  not a scan clock — `scan-completed` fires on every successful tick and is what the
+  sidebar's "Last scan" reads.
 - The window is frameless (`"decorations": false`); the titlebar controls are React UI calling `getCurrentWindow()`.
 
 ## Vite

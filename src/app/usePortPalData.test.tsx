@@ -25,6 +25,7 @@ function createGateway(overrides: Partial<PortPalGateway> = {}): PortPalGateway 
     onPortEvents: vi.fn().mockResolvedValue(() => {}),
     onScanDegraded: vi.fn().mockResolvedValue(() => {}),
     onScanRecovered: vi.fn().mockResolvedValue(() => {}),
+    onScanCompleted: vi.fn().mockResolvedValue(() => {}),
     ...overrides,
   };
 }
@@ -316,6 +317,67 @@ describe('usePortPalData', () => {
     expect(result.current.toast).toContain('working directory is gone');
     expect(result.current.toast).not.toContain('[object Object]');
     expect(result.current.restarting.size).toBe(0);
+  });
+
+  it('advances the scan clock on a quiet scan that changed nothing', async () => {
+    // The bug: `lastScanAt` was stamped from `onPortsUpdated`, which the
+    // backend fires only when the port list actually differs. On an idle
+    // machine the sidebar therefore climbed to "Last scan: 3m ago" while
+    // scanning was perfectly healthy — indistinguishable from a stalled
+    // scanner, which is the one thing that line exists to show.
+    let completeScan!: () => void;
+    const gateway = createGateway({
+      onScanCompleted: vi.fn().mockImplementation(async (handler: () => void) => {
+        completeScan = handler;
+        return () => {};
+      }),
+    });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.lastScanAt).not.toBeNull());
+
+    const before = result.current.lastScanAt!;
+    // A completed scan that found the same ports, so no ports-updated follows.
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(before + 5_000);
+    await act(async () => { completeScan(); });
+    clock.mockRestore();
+
+    expect(result.current.lastScanAt).toBe(before + 5_000);
+    expect(result.current.ports).toEqual([port]);
+  });
+
+  it('does not advance the scan clock when only a port list arrives', async () => {
+    // The other half of the split. Keeping the two events independent is what
+    // makes a climbing value mean "scanning stopped" rather than "nothing has
+    // changed lately".
+    let pushPorts!: (ports: PortInfo[]) => void;
+    const gateway = createGateway({
+      onPortsUpdated: vi.fn().mockImplementation(async (handler: (ports: PortInfo[]) => void) => {
+        pushPorts = handler;
+        return () => {};
+      }),
+    });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.lastScanAt).not.toBeNull());
+
+    const before = result.current.lastScanAt!;
+    const moved = { ...port, port: 4321 };
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(before + 5_000);
+    await act(async () => { pushPorts([moved]); });
+    clock.mockRestore();
+
+    expect(result.current.ports).toEqual([moved]);
+    expect(result.current.lastScanAt).toBe(before);
+  });
+
+  it('releases the scan clock subscription on unmount', async () => {
+    const unlisten = vi.fn();
+    const gateway = createGateway({ onScanCompleted: vi.fn().mockResolvedValue(unlisten) });
+    const { unmount } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(gateway.onScanCompleted).toHaveBeenCalled());
+
+    unmount();
+
+    await waitFor(() => expect(unlisten).toHaveBeenCalled());
   });
 
   it('reports a failed rescan rather than silently keeping the previous rows, and clears it on retry', async () => {
