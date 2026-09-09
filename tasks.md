@@ -15,9 +15,9 @@ Status legend: `[ ]` open · `[x]` done · `[~]` resolved outside this work
 | Priority | Total | Done | Open |
 |---|---|---|---|
 | EXTRA HIGH | 1 | 1 | 0 |
-| HIGH | 5 | 3 | 2 |
-| MEDIUM | 15 | 0 | 15 |
-| LOW | 10 | 4 | 6 |
+| HIGH | 5 | 4 | 1 |
+| MEDIUM | 15 | 1 | 14 |
+| LOW | 10 | 6 | 4 |
 
 General note: the shipped `src-tauri` and `src` code is unusually well hardened. The
 restart path is a trusted-store replay with a real jail, the PID 0/1 policy is coherent,
@@ -135,7 +135,7 @@ tables.
   kill — bulk-kill phrasing inherited from Kill All. Naming the process and port would read
   better for the single case.
 
-## [ ] Task: Dashboard "Connections" tile navigates to a route that renders nothing
+## [x] Task: Dashboard "Connections" tile navigates to a route that renders nothing
 
 - **Location**: `src/features/dashboard/DashboardPage.tsx` (Line 29), `src/App.tsx` (Lines 53-54), `src/components/shell/Sidebar.tsx` (Lines 46-47)
 - **Description**: The Port Map route was disabled for MVP — the `{page === 'map' && ...}`
@@ -149,6 +149,8 @@ tables.
   `onNavigate('map')` and the unused prop chain at compile time), or add a default branch
   in `App.tsx` rendering the ports page for unrouted values. Do not leave a reachable
   navigation target with no renderer.
+- **Status**: **Done.** Removed `'map'` from `NavPage`, rewired Dashboard's Connections
+  tile to navigate to `'traffic'`, and removed dead navigation props and handlers.
 
 ## [x] Task: macOS scan spawns one `lsof` per unattributed PID inside a 2-second loop
 
@@ -193,7 +195,7 @@ tables.
 
 # MEDIUM
 
-## [ ] Task: `observedStarts` records the oldest start timestamp, not the current one
+## [x] Task: `observedStarts` records the oldest start timestamp, not the current one
 
 - **Location**: `src/app/usePortPalData.ts` (Lines 33-41, 88), `src-tauri/src/logger.rs` — `get_events` (Lines 177-182)
 - **Description**: `get_events` returns events reverse-chronologically (newest first).
@@ -206,6 +208,11 @@ tables.
 - **Suggested Fix**: Skip a port already in the accumulator, or take the max:
   `observedAt[p] = Math.max(observedAt[p] ?? 0, event.timestamp)`. The latter is
   order-independent and also correct for the streamed batch path.
+- **Status**: **Done and tested.** Updated `observedStarts` in `src/app/usePortPalData.ts` to
+  use `Math.max(observedAt[event.port] ?? 0, event.timestamp)`, accepting the existing
+  `current` state as the initial record. When events are fetched or streamed in reverse
+  chronological order, the newest timestamp is preserved and cannot regress. Unit test added
+  in `src/app/usePortPalData.test.tsx`.
 
 ## [ ] Task: STOPPED rows ignore the active search and filters
 
@@ -425,7 +432,7 @@ tables.
 - **Suggested Fix**: Once the entrypoint refactor is committed, rewrite the section for the
   single-entrypoint design and note that the panic-free scan contract is intentional.
 
-## [ ] Task: The Tauri command-mirroring hook is permanently a no-op
+## [x] Task: The Tauri command-mirroring hook is permanently a no-op
 
 - **Location**: `.claude/hooks/check-tauri-mirror.mjs` (Lines 26-36, 55-56), `.claude/settings.json`
 - **Description**: `commandsIn` looks for a `generate_handler!` block and returns `null`
@@ -436,6 +443,8 @@ tables.
 - **Suggested Fix**: Delete the hook and its `settings.json` entry once the
   single-entrypoint refactor lands, since the drift it guarded against becomes structurally
   impossible.
+- **Status**: **Done.** Deleted `.claude/hooks/check-tauri-mirror.mjs` and reset
+  `.claude/settings.json` to `{}`.
 
 ## [x] Task: `find_project_root` cache doc comment contradicts the code on three points
 
@@ -455,7 +464,7 @@ tables.
   overflow past 512 entries, and returns hits without existence checks (with
   `build_launch_record` doing the canonicalization check).
 
-## [ ] Task: A disabled feature ships as dead code held alive by `void` suppressions
+## [x] Task: A disabled feature ships as dead code held alive by `void` suppressions
 
 - **Location**: `src/features/port-map/**` (8 files incl. tests), `src/components/shell/Sidebar.tsx` (Line 51), `src/features/ports/PortsPage.tsx` (Lines 6, 117-123, 143-151), `src/lib/tauri.ts` (`getPortGraph`), `src-tauri/src/lib.rs` (Line 56)
 - **Description**: The Port Map was disabled for MVP but every artefact remains: the
@@ -468,6 +477,8 @@ tables.
 - **Suggested Fix**: Delete the feature and recover it from git history when wanted (the
   commented JSX already documents the wiring). If it must stay, put it behind a single
   feature-flag constant so the code is genuinely referenced and the `void` suppressions go.
+- **Status**: **Done.** Deleted `src/features/port-map/` feature directory and unrouted
+  references, eliminating all `void` suppressions and dead IPC calls.
 
 ## [ ] Task: `src-tauri/errors.json` is a tracked zero-byte file
 

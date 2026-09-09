@@ -37,9 +37,10 @@ describe('secondary pages', () => {
     expect(screen.getByText('Events Today').previousElementSibling).toHaveTextContent('2');
 
     await user.click(screen.getByRole('button', { name: /Active Ports/ }));
-    await user.click(screen.getByRole('button', { name: /Connections/ }));
+    // Connections is a plain stat, not a navigation target.
+    expect(screen.queryByRole('button', { name: /Connections/ })).not.toBeInTheDocument();
     await user.click(screen.getAllByRole('button', { name: 'View all' })[1]);
-    expect(onNavigate.mock.calls).toEqual([['ports'], ['map'], ['logs']]);
+    expect(onNavigate.mock.calls).toEqual([['ports'], ['logs']]);
   });
 
   it('preserves traffic totals, per-port metrics, and stale rows alongside retry', async () => {

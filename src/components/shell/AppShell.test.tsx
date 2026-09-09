@@ -67,7 +67,6 @@ describe("AppShell", () => {
       "Ports",
       "Traffic",
       "Services",
-      // MVP: Port Map hidden - preserved in src/features/port-map/
       "Logs",
       "Settings",
     ]);

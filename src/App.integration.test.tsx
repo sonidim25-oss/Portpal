@@ -22,10 +22,6 @@ describe('App integration - invoke + ports', () => {
       if (cmd === 'get_port_traffic') return Promise.resolve({});
       if (cmd === 'kill_process') return Promise.resolve();
       if (cmd === 'restart_process') return Promise.resolve();
-      if (cmd === 'get_port_graph') return Promise.resolve({
-        nodes: mockPorts.map((port) => ({ id: `port:${port.port}`, ...port, framework: null, is_dev: Boolean(port.project_name), connection_count: 0 })),
-        edges: [],
-      });
       return Promise.resolve([]);
     });
     // listen mock returns unsubscribe
@@ -106,7 +102,7 @@ describe('App integration - invoke + ports', () => {
     }
   });
 
-  it('keeps six navigation destinations wired (MVP: Port Map hidden)', async () => {
+  it('keeps six navigation destinations wired', async () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
@@ -114,7 +110,6 @@ describe('App integration - invoke + ports', () => {
     for (const [navigation, heading] of [
       ['Dashboard', 'Dashboard'], ['Traffic', 'Traffic Monitor'], ['Services', 'Services'],
       ['Logs', 'Event Logs'], ['Settings', 'Settings'], ['Ports', 'Ports'],
-      // MVP: Port Map hidden - preserved in src/features/port-map/
     ] as const) {
       await user.click(screen.getByRole('button', { name: navigation }));
       expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();

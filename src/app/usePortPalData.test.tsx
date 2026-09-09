@@ -19,7 +19,6 @@ function createGateway(overrides: Partial<PortPalGateway> = {}): PortPalGateway 
     getPorts: vi.fn().mockResolvedValue([port]),
     getPortEvents: vi.fn().mockResolvedValue([]),
     getPortTraffic: vi.fn().mockResolvedValue({ 5173: [{ connections: 3, timestamp: 1000 }] } satisfies TrafficByPort),
-    getPortGraph: vi.fn().mockResolvedValue({ nodes: [], edges: [] }),
     killProcess: vi.fn().mockResolvedValue(undefined),
     restartProcess: vi.fn().mockResolvedValue(undefined),
     onPortsUpdated: vi.fn().mockResolvedValue(() => {}),
@@ -190,7 +189,7 @@ describe('usePortPalData', () => {
     expect(JSON.stringify(vi.mocked(gateway.restartProcess).mock.calls)).not.toContain('npm run dev');
   });
 
-  it('does not restart a port with no recorded command or path', async () => {
+  it('does not restart a port with no recorded command or path, and says why', async () => {
     const gateway = createGateway();
     const { result } = renderHook(() => usePortPalData(gateway));
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -198,6 +197,34 @@ describe('usePortPalData', () => {
     await act(async () => result.current.restartPort({ ...port, start_cmd: null, project_path: null }));
 
     expect(gateway.restartProcess).not.toHaveBeenCalled();
+    // Silently returning made the click look like a no-op; the refusal is now
+    // reported the same way every other failure in this hook is.
+    expect(result.current.toast).toContain("Can't restart portpal");
+    expect(result.current.restarting.size).toBe(0);
+  });
+
+  it('names the missing half when explaining why a restart is unavailable', async () => {
+    const gateway = createGateway();
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => result.current.restartPort({ ...port, start_cmd: null }));
+    expect(result.current.toast).toContain('did not record how it was started');
+
+    await act(async () => result.current.restartPort({ ...port, project_path: null }));
+    expect(result.current.toast).toContain('no project folder was found');
+
+    expect(gateway.restartProcess).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the process name when a refused restart has no project name', async () => {
+    const gateway = createGateway();
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => result.current.restartPort({ ...port, project_name: null, start_cmd: null }));
+
+    expect(result.current.toast).toContain("Can't restart node");
   });
 
   it('exposes independent errors without setting a successful scan time for a failed port load', async () => {
@@ -317,5 +344,19 @@ describe('usePortPalData', () => {
 
     await waitFor(() => expect(result.current.eventsLoading).toBe(false));
     expect(result.current.errors.events).toBe('events unavailable');
+  });
+
+  it('records the newest start timestamp, not the oldest one, from reverse-chronological events', async () => {
+    // get_events returns reverse-chronological events (newest first).
+    // When multiple start events exist for a port, the newest timestamp must win.
+    const events: PortEvent[] = [
+      { port: 5173, pid: 1234, event_type: 'started', timestamp: 2000, process_name: 'node' },
+      { port: 5173, pid: 1234, event_type: 'started', timestamp: 1000, process_name: 'node' },
+    ];
+    const gateway = createGateway({ getPortEvents: vi.fn().mockResolvedValue(events) });
+    const { result } = renderHook(() => usePortPalData(gateway));
+    await waitFor(() => expect(result.current.eventsLoading).toBe(false));
+
+    expect(result.current.observedAt[5173]).toBe(2000);
   });
 });

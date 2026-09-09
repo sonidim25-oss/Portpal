@@ -53,20 +53,6 @@ async fn restart_process(port: u16, pid: u32) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn get_port_graph() -> Result<connections::PortGraph, scanner::ScanError> {
-    run_off_thread(|| {
-        let ports = scanner::try_scan_ports()?;
-        let listening: Vec<(u16, u32, String, Option<String>)> = ports
-            .iter()
-            .map(|p| (p.port, p.pid, p.process_name.clone(), p.project_name.clone()))
-            .collect();
-        Ok(connections::get_port_graph(&listening))
-    })
-    .await
-    .unwrap_or_else(|e| Err(scanner::ScanError::worker_failed(e)))
-}
-
-#[tauri::command]
 fn get_port_events() -> Vec<logger::PortEvent> {
     let lg = logger::LOGGER
         .lock()
@@ -89,7 +75,6 @@ pub fn run() {
             get_ports,
             kill_process,
             restart_process,
-            get_port_graph,
             get_port_events,
             get_port_traffic
         ])

@@ -20,12 +20,9 @@ const navigationItems: NavigationItem[] = [
   { page: "ports", label: "Ports", icon: <PortsIcon /> },
   { page: "traffic", label: "Traffic", icon: <TrafficIcon /> },
   { page: "services", label: "Services", icon: <ServicesIcon /> },
-  // MVP: Port Map hidden - code preserved in src/features/port-map/ (PortMapPage, PortTopology, etc.)
-  // { page: "map", label: "Port Map", icon: <MapIcon /> },
   { page: "logs", label: "Logs", icon: <LogsIcon /> },
   { page: "settings", label: "Settings", icon: <SettingsIcon /> },
 ];
-void MapIcon; // MVP: preserved
 
 export function Sidebar({ page, onNavigate, ports, lastScanAt }: SidebarProps) {
   return (
@@ -71,10 +68,6 @@ function TrafficIcon() {
 
 function ServicesIcon() {
   return <svg viewBox="0 0 18 18"><rect x="2" y="2" width="6" height="6" /><rect x="10" y="2" width="6" height="6" /><rect x="2" y="10" width="6" height="6" /><path d="M13 11v5m-2.5-2.5h5" /></svg>;
-}
-
-function MapIcon() {
-  return <svg viewBox="0 0 18 18"><circle cx="4" cy="9" r="2" /><circle cx="14" cy="4" r="2" /><circle cx="14" cy="14" r="2" /><path d="m5.7 8 6.6-3.1M5.7 10l6.6 3.1" /></svg>;
 }
 
 function LogsIcon() {

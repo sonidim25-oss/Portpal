@@ -54,9 +54,9 @@ See every listening port on your machine at a glance — process name, PID, conn
 ### ⚡ One-Click Control
 Hover over any port and click **✕** to kill it instantly. If PortPal knows the start command, hit **↻** to restart it directly in a new terminal. Dead processes show a "stopped" badge with a persistent restart button.
 
-### 🗺️ Interactive Port Map (D3.js Topology) — temporarily disabled in v0.2
+### 🗺️ Interactive Port Map (D3.js Topology) — removed in v0.2
 
-> **Note:** The Port Map route is disabled in v0.2 builds (hidden from navigation in `src/App.tsx` / `src/components/shell/Sidebar.tsx`; code preserved in `src/features/port-map/`). What follows describes the planned feature, not what ships today.
+> **Note:** The Port Map was removed in v0.2 to eliminate dead code (it had been hidden from navigation with the code preserved behind `void` suppressions). The full implementation — `src/features/port-map/`, the `get_port_graph` IPC command, and the D3 topology — remains recoverable from git history. What follows describes the planned feature, not what ships today.
 
 The crown jewel of PortPal. A D3.js-powered network topology visualization that shows precisely how your services are communicating.
 

@@ -225,11 +225,23 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
   }, [gateway, showToast, ports]);
 
   const restartPort = useCallback(async (port: PortInfo) => {
-    if (!port.start_cmd || !port.project_path) return;
+    const label = port.project_name ?? port.process_name;
+    // Restart needs a launch record the backend captured during a scan, which
+    // requires both a command line and a project root to jail it to. The table
+    // hides the button when either is missing, so reaching here means a stale
+    // row or a caller that skipped that check — say which half is missing
+    // rather than letting the click look like it did nothing at all.
+    if (!port.start_cmd || !port.project_path) {
+      const reason = !port.start_cmd
+        ? 'PortPal did not record how it was started'
+        : 'no project folder was found for it';
+      showToast(`Can't restart ${label}: ${reason}`);
+      return;
+    }
     setRestarting((current) => new Set(current).add(port.pid));
     try {
       await gateway.restartProcess(port.port, port.pid);
-      showToast(`Restarting ${port.project_name ?? port.process_name}…`);
+      showToast(`Restarting ${label}…`);
       setKilledPorts((current) => {
         const next = new Map(current);
         // Only clear our own STOPPED row: on a port conflict the entry may
@@ -238,7 +250,7 @@ export function usePortPalData(gateway: PortPalGateway = tauriPortPalGateway): U
         return next;
       });
     } catch (error) {
-      showToast(`Failed to restart ${port.project_name ?? port.process_name}: ${errorMessage(error)}`);
+      showToast(`Failed to restart ${label}: ${errorMessage(error)}`);
     } finally {
       setRestarting((current) => {
         const next = new Set(current);

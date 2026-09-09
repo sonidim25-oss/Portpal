@@ -48,7 +48,6 @@ function renderPorts(overrides: Partial<PortsPageProps> = {}) {
   const onRetry = vi.fn().mockResolvedValue(undefined);
   const onKill = vi.fn().mockResolvedValue(undefined);
   const onRestart = vi.fn().mockResolvedValue(undefined);
-  const onOpenMap = vi.fn();
   const props: PortsPageProps = {
     ports: [devPort, systemPort, otherPort],
     traffic: {
@@ -65,12 +64,11 @@ function renderPorts(overrides: Partial<PortsPageProps> = {}) {
     onRetry,
     onKill,
     onRestart,
-    onOpenMap,
     ...overrides,
   };
 
   const view = render(<PortsPage {...props} />);
-  return { ...view, props, onRetry, onKill, onRestart, onOpenMap };
+  return { ...view, props, onRetry, onKill, onRestart };
 }
 
 describe("PortsPage", () => {
@@ -90,8 +88,6 @@ describe("PortsPage", () => {
     expect(screen.getByRole("button", { name: "Other 1" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Filter" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Kill All" })).toBeVisible();
-    // MVP: Port Map hidden - preserved in src/features/port-map/
-    expect(screen.queryByRole("button", { name: "Open Port Map" })).not.toBeInTheDocument();
 
     for (const heading of ["PORT", "PROCESS", "PROJECT", "PID", "CONNECTIONS", "STARTED", "ACTIONS"]) {
       expect(screen.getByRole("columnheader", { name: heading })).toBeVisible();
@@ -319,13 +315,6 @@ describe("PortsPage", () => {
     await user.click(screen.getByRole("button", { name: "Confirm" }));
     expect(await screen.findByRole("status")).toHaveTextContent("Killed 0, failed 2");
     expect(onKill).toHaveBeenCalledTimes(2);
-  });
-
-  it("clears selection before opening Port Map", async () => {
-    // MVP: Port Map hidden - button not rendered, selection stays
-    const { onOpenMap } = renderPorts();
-    expect(screen.queryByRole("button", { name: "Open Port Map" })).not.toBeInTheDocument();
-    expect(onOpenMap).not.toHaveBeenCalled();
   });
 
   it("shows a loading state without claiming a port count", () => {

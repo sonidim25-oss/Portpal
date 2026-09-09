@@ -26,7 +26,7 @@ export function DashboardPage({ ports, events, traffic, error, onRetry, onNaviga
       <div className="secondary-summary-grid">
         <Summary label="Active Ports" value={ports.length} onClick={() => onNavigate('ports')} />
         <Summary label="Frameworks" value={frameworks.size} />
-        <Summary label="Connections" value={connections} onClick={() => onNavigate('map')} />
+        <Summary label="Connections" value={connections} />
         <Summary label="Events Today" value={eventsToday} onClick={() => onNavigate('logs')} />
       </div>
 

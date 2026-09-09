@@ -2,8 +2,7 @@ import type { Page } from "@playwright/test";
 
 type FixturePort = { port: number; pid: number; process_name: string; project_name: string | null; project_path: string | null; protocol: string; start_cmd: string | null };
 type FixtureEvent = FixturePort & { framework: string | null; event_type: string; timestamp: number };
-type FixtureGraph = { nodes: Array<{ id: string; port: number; pid: number; process_name: string; project_name: string | null; framework: string | null; is_dev: boolean; connection_count: number }>; edges: Array<{ source: string; target: string; active: boolean }> };
-export type TauriFixture = { ports: FixturePort[]; events: FixtureEvent[]; traffic: Record<number, Array<{ connections: number; timestamp: number }>>; graph: FixtureGraph };
+export type TauriFixture = { ports: FixturePort[]; events: FixtureEvent[]; traffic: Record<number, Array<{ connections: number; timestamp: number }>> };
 
 export async function installTauriFixture(page: Page, fixture: TauriFixture) {
   await page.addInitScript((data) => {
@@ -24,7 +23,6 @@ export async function installTauriFixture(page: Page, fixture: TauriFixture) {
           case "get_ports": return structuredClone(data.ports);
           case "get_port_events": return structuredClone(data.events);
           case "get_port_traffic": return structuredClone(data.traffic);
-          case "get_port_graph": return structuredClone(data.graph);
           case "restart_process": {
             // The hardened command takes a port and a pid and nothing else;
             // reject anything that smuggles a command line or path across IPC.

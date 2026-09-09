@@ -20,7 +20,7 @@ export interface PortEvent {
 
 export interface TrafficSample { connections: number; timestamp: number }
 export type TrafficByPort = Record<number, TrafficSample[]>;
-export type NavPage = 'dashboard' | 'ports' | 'traffic' | 'map' | 'services' | 'logs' | 'settings';
+export type NavPage = 'dashboard' | 'ports' | 'traffic' | 'services' | 'logs' | 'settings';
 export type PortFilter = 'all' | 'dev' | 'system' | 'other';
 export type PortCategory = Exclude<PortFilter, 'all'>;
 export type PortCounts = Record<PortFilter, number>;
