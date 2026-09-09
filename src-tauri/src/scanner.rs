@@ -116,19 +116,28 @@ fn is_safe_external_tool_path(path: &Path) -> bool {
     { true }
 }
 
-/// Runs a port-listing tool and returns its stdout.
+/// Runs an external network tool and returns its stdout.
+///
+/// `purpose` completes the sentence "PortPal needs it to …" in the error
+/// message, because the tools do not all serve the same capability: on Linux
+/// `lsof` lists listeners while `ss` reads connections, so a failure has to say
+/// which of the two broke rather than blame port scanning for either.
 ///
 /// Every failure is reported as a typed error rather than a panic: a missing
 /// binary, a sandbox denial, and a non-zero exit are all recoverable states
 /// that must degrade to a visible warning, never terminate the app or the
 /// background tray thread.
-fn run_scan_tool(tool: &'static str, args: &[&str]) -> Result<String, ScanError> {
+pub(crate) fn run_scan_tool(
+    tool: &'static str,
+    args: &[&str],
+    purpose: &'static str,
+) -> Result<String, ScanError> {
     let executable = resolve_external_tool(tool).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             ScanError::new(
                 "tool_missing",
                 tool,
-                format!("`{tool}` was not found on PATH. PortPal needs it to list listening ports."),
+                format!("`{tool}` was not found on PATH. PortPal needs it to {purpose}."),
             )
         } else {
             ScanError::new(
@@ -154,9 +163,27 @@ fn run_scan_tool(tool: &'static str, args: &[&str]) -> Result<String, ScanError>
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// Verifies at startup that this platform's scan tool is actually usable, so a
-/// missing dependency surfaces as a warning on launch instead of an empty port
-/// list minutes later. Never panics; the caller decides how to report it.
+/// The external tool this platform lists TCP listeners with, paired with the
+/// exact args the row parser expects.
+///
+/// One definition so the startup preflight cannot drift from what the scan
+/// actually spawns. It is deliberately *not* the whole dependency set: reading
+/// connections takes a second tool on Linux — see
+/// [`crate::connections::connections_tool`].
+pub(crate) fn listing_tool() -> (&'static str, &'static [&'static str]) {
+    #[cfg(target_os = "windows")]
+    return ("netstat", &["-ano"]);
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    return ("lsof", &["-iTCP", "-sTCP:LISTEN", "-n", "-P"]);
+}
+
+/// Verifies at startup that this platform's *listing* tool is actually usable,
+/// so a missing dependency surfaces as a warning on launch instead of an empty
+/// port list minutes later. Never panics; the caller decides how to report it.
+///
+/// This covers one capability only. `connections::preflight` checks the other,
+/// and on Linux that is a different binary; `run()` calls both.
 pub fn preflight() -> Result<(), ScanError> {
     try_scan_ports().map(|_| ())
 }
@@ -309,7 +336,8 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortI
     // Reading that text reported zero ports on every non-English install.
     // UDP rows carry no State column and are rejected. See the scope note on
     // `try_scan_ports`.
-    let stdout = run_scan_tool("netstat", &["-ano"])?;
+    let (tool, args) = listing_tool();
+    let stdout = run_scan_tool(tool, args, "list listening ports")?;
     let mut ports: Vec<PortInfo> = Vec::new();
     let mut seen_entries: HashSet<(u16, u32)> = HashSet::new();
 
@@ -387,7 +415,8 @@ fn kill_windows(pid: u32) -> Result<(), String> {
 fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo>, ScanError> {
     // TCP only, by the `-iTCP -sTCP:LISTEN` selectors: UDP has no LISTEN state
     // to select on. See the scope note on `try_scan_ports`.
-    let stdout = run_scan_tool("lsof", &["-iTCP", "-sTCP:LISTEN", "-n", "-P"])?;
+    let (tool, args) = listing_tool();
+    let stdout = run_scan_tool(tool, args, "list listening ports")?;
     let mut ports: Vec<PortInfo> = Vec::new();
     let mut seen_entries: HashSet<(u16, u32)> = HashSet::new();
     // PIDs whose working directory `sysinfo` could not supply, resolved in one
@@ -1111,10 +1140,44 @@ mod tests {
     fn missing_tool_is_a_typed_error_not_a_panic() {
         // The historical bug: a missing binary panicked and took down the app
         // and the tray thread. It must now be a recoverable, typed error.
-        let error = run_scan_tool("portpal-no-such-tool-exists", &[]).unwrap_err();
+        let error = run_scan_tool("portpal-no-such-tool-exists", &[], "list listening ports").unwrap_err();
         assert_eq!(error.code, "tool_missing");
         assert_eq!(error.tool, "portpal-no-such-tool-exists");
         assert!(error.message.contains("not found on PATH"), "{}", error.message);
+        // The message names the capability that breaks, not "port scanning"
+        // for every tool: on Linux the connection reader is a different binary.
+        assert!(error.message.contains("list listening ports"), "{}", error.message);
+    }
+
+    #[test]
+    fn preflight_covers_every_tool_this_platform_needs() {
+        // The regression: preflight ran the listing scan only. On Linux that
+        // exercises `lsof` and never touches `ss`, so a box with one but not
+        // the other started without a warning and then showed an edgeless port
+        // map with every connection count at 0.
+        let (listing, listing_args) = listing_tool();
+        let (conns, conns_args) = crate::connections::connections_tool();
+        assert!(!listing.is_empty() && !listing_args.is_empty());
+        assert!(!conns.is_empty() && !conns_args.is_empty());
+
+        // Each preflight attributes its own binary, so the startup log says
+        // which dependency to install.
+        if let Err(e) = preflight() {
+            assert_eq!(e.tool, listing, "{}", e.message);
+        }
+        if let Err(e) = crate::connections::preflight() {
+            assert_eq!(e.tool, conns, "{}", e.message);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_depends_on_two_distinct_tools() {
+        // Linux is the platform where the two capabilities do not share a
+        // binary, which is what made the single-tool preflight insufficient.
+        assert_eq!(listing_tool().0, "lsof");
+        assert_eq!(crate::connections::connections_tool().0, "ss");
+        assert_ne!(listing_tool().0, crate::connections::connections_tool().0);
     }
 
     #[cfg(unix)]
@@ -1139,7 +1202,7 @@ mod tests {
         #[cfg(not(target_os = "windows"))]
         let (tool, args): (&str, &[&str]) = ("sh", &["-c", "exit 1"]);
 
-        let error = run_scan_tool(tool, args).unwrap_err();
+        let error = run_scan_tool(tool, args, "list listening ports").unwrap_err();
         assert_eq!(error.code, "tool_failed");
     }
 
@@ -1150,7 +1213,7 @@ mod tests {
         #[cfg(not(target_os = "windows"))]
         let (tool, args): (&str, &[&str]) = ("sh", &["-c", "echo portpal"]);
 
-        assert!(run_scan_tool(tool, args).unwrap().contains("portpal"));
+        assert!(run_scan_tool(tool, args, "list listening ports").unwrap().contains("portpal"));
     }
 
     #[test]

@@ -18,6 +18,28 @@ afterwards:
 `LISTENING` and `ESTABLISHED` are TCP connection states, so a UDP row cannot
 match them even where the tool prints one.
 
+### Runtime tool dependencies
+
+Read the table by row: **Linux needs two different binaries**, `lsof` (util-linux
+/ lsof package) for listeners and `ss` (iproute2) for connections. Windows and
+macOS each serve both capabilities from one tool.
+
+Each capability is therefore preflighted separately at startup
+(`scanner::preflight` and `connections::preflight`, both called from `run()`), and
+the command each check runs comes from the same definition the reader uses —
+`scanner::listing_tool` and `connections::connections_tool` — so a check cannot
+drift from what actually spawns.
+
+Before that split, preflight ran the listing scan only. A Linux box with `lsof`
+but no `ss` started with no warning and then showed every connection count as 0
+and a port map with no edges, which is exactly what an idle machine looks like.
+A missing tool now names itself on stderr at launch.
+
+Runtime degradation still differs between the two: a failed *listing* scan is a
+typed `ScanError` that reaches the UI (`get_ports`, the tray's `scan-degraded`
+event), while a failed *connection* read returns an empty connection list, so the
+startup warning is the only signal that the port map is empty for a reason.
+
 ## Why UDP is out of scope rather than pending
 
 UDP is connectionless. A UDP socket has no `LISTEN` state and no established

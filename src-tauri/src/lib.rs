@@ -80,13 +80,24 @@ pub fn run() {
             get_port_traffic
         ])
         .setup(|app| {
-            // Preflight: confirm the platform's port-listing tool actually
-            // works before the UI reports an empty list. A failure is logged
-            // and the app still starts — the scan error reaches the user
+            // Preflight: confirm every external tool this platform needs
+            // actually works before the UI reports empty data. Both capabilities
+            // are checked, because they are not always the same binary: Linux
+            // lists listeners with `lsof` and reads connections with `ss`, so
+            // checking only the scanner's tool let a missing `ss` start up clean
+            // and then report an edgeless port map with every connection count
+            // at 0 — the same picture as an idle machine. A failure is logged
+            // and the app still starts; the scan error also reaches the user
             // through get_ports and the tray's scan-degraded event.
             if let Err(e) = scanner::preflight() {
                 eprintln!(
                     "PortPal preflight failed [{}]: {} (port scanning will be unavailable until `{}` works)",
+                    e.code, e.message, e.tool
+                );
+            }
+            if let Err(e) = connections::preflight() {
+                eprintln!(
+                    "PortPal preflight failed [{}]: {} (connection counts and the port map will read as empty until `{}` works)",
                     e.code, e.message, e.tool
                 );
             }

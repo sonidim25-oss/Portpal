@@ -4,7 +4,7 @@
 use crate::netaddr::parse_port;
 #[cfg(target_os = "windows")]
 use crate::netaddr::parse_netstat_tcp_row;
-use crate::scanner::{is_unattributed_pid, resolve_external_tool};
+use crate::scanner::{is_unattributed_pid, resolve_external_tool, run_scan_tool, ScanError};
 use crate::taxonomy::{get_framework_name, is_dev_port};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -205,6 +205,43 @@ fn add_edge(
     }
 }
 
+/// The external tool this platform reads established TCP connections with,
+/// paired with the exact args the parser below expects.
+///
+/// **On Linux this is not the tool the scanner uses.** Listeners come from
+/// `lsof` and connections from `ss`, so a Linux install needs *both* binaries;
+/// macOS serves both capabilities from `lsof` and Windows both from `netstat`.
+/// That asymmetry is why the startup preflight checks this tool separately from
+/// [`crate::scanner::listing_tool`] — it used to check the scanner's tool only,
+/// so a Linux box with `lsof` but no `ss` (iproute2 absent) started clean and
+/// then reported every connection count as 0 and an edgeless port map, which is
+/// indistinguishable from a genuinely idle machine.
+///
+/// One definition, shared by the reader and the preflight, so the check cannot
+/// drift from the command that actually runs.
+pub(crate) fn connections_tool() -> (&'static str, &'static [&'static str]) {
+    #[cfg(target_os = "windows")]
+    return ("netstat", &["-ano"]);
+
+    #[cfg(target_os = "macos")]
+    return ("lsof", &["-iTCP", "-sTCP:ESTABLISHED", "-n", "-P"]);
+
+    #[cfg(target_os = "linux")]
+    return ("ss", &["-tnp", "state", "established"]);
+}
+
+/// Verifies at startup that the connection tool is usable, so a missing
+/// dependency surfaces as a warning on launch instead of as a permanently
+/// empty port map. Never panics; the caller decides how to report it.
+///
+/// Runs the same command the reader runs. On macOS and Windows that repeats the
+/// scanner's spawn once at launch, which is cheaper than letting the two checks
+/// disagree about what is installed.
+pub fn preflight() -> Result<(), ScanError> {
+    let (tool, args) = connections_tool();
+    run_scan_tool(tool, args, "read established connections").map(|_| ())
+}
+
 /// Lists established TCP connections.
 ///
 /// TCP only, matching `scanner::try_scan_ports`: the graph draws edges between
@@ -225,8 +262,9 @@ fn get_active_connections() -> Vec<Connection> {
 #[cfg(target_os = "windows")]
 fn get_connections_windows() -> Vec<Connection> {
     // Use netstat -ano to get all ESTABLISHED connections with PIDs
-    let output = match resolve_external_tool("netstat")
-        .and_then(|executable| Command::new(executable).args(["-ano"]).output()) {
+    let (tool, args) = connections_tool();
+    let output = match resolve_external_tool(tool)
+        .and_then(|executable| Command::new(executable).args(args).output()) {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -278,10 +316,9 @@ fn get_connections_windows() -> Vec<Connection> {
 #[cfg(target_os = "macos")]
 fn get_connections_macos() -> Vec<Connection> {
     // `-iTCP -sTCP:ESTABLISHED` keeps this TCP-only by construction.
-    let output = match resolve_external_tool("lsof")
-        .and_then(|executable| Command::new(executable)
-        .args(["-iTCP", "-sTCP:ESTABLISHED", "-n", "-P"])
-        .output()) {
+    let (tool, args) = connections_tool();
+    let output = match resolve_external_tool(tool)
+        .and_then(|executable| Command::new(executable).args(args).output()) {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -321,10 +358,9 @@ fn get_connections_macos() -> Vec<Connection> {
 fn get_connections_linux() -> Vec<Connection> {
     // `-t` keeps this TCP-only; `ss -u` would list UDP sockets that have no
     // established state to report.
-    let output = match resolve_external_tool("ss")
-        .and_then(|executable| Command::new(executable)
-        .args(["-tnp", "state", "established"])
-        .output()) {
+    let (tool, args) = connections_tool();
+    let output = match resolve_external_tool(tool)
+        .and_then(|executable| Command::new(executable).args(args).output()) {
         Ok(o) => o,
         Err(_) => return vec![],
     };
