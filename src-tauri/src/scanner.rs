@@ -1578,6 +1578,19 @@ mod tests {
     }
 
     #[test]
+    fn kill_policy_rejects_a_critical_listener_even_when_another_pid_shares_the_port() {
+        let ports = vec![listener(111, 3000, "node"), listener(222, 3000, "postgres")];
+        let error = validate_kill(222, &ports, &[]).unwrap_err();
+        assert_eq!(error.code, "critical_process");
+    }
+
+    #[test]
+    fn restart_unknown_endpoint_fails_before_spawning() {
+        let error = restart_trusted(65534, 4_294_967_290).unwrap_err();
+        assert!(error.contains("no trusted launch record"));
+    }
+
+    #[test]
     fn extract_project_name_some() {
         let p = Some("C:/Users/123da/PycharmProjects/PortPal".to_string());
         assert_eq!(extract_project_name(&p), Some("PortPal".to_string()));
