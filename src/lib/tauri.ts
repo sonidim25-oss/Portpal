@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { PortEvent, PortInfo, TrafficByPort } from '../app/types';
 
-export interface ScanError {
+/// Mirrors the Rust `ScanError`: why a port scan could not be completed.
 /// Distinct from an empty port list, which means nothing is listening.
 export interface ScanError {
   code: 'tool_missing' | 'tool_failed' | (string & {});
