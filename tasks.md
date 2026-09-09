@@ -97,7 +97,7 @@ destructive-action UX, and duplicated policy tables.
   kill. (3) Decide explicitly whether the process tree is in scope and reflect it in the
   confirmation dialog — `/T` changes the blast radius.
 
-## [ ] Task: Normal multi-worker servers are reported as port conflicts
+## [x] Task: Normal multi-worker servers are reported as port conflicts
 
 - **Location**: `src-tauri/src/tray.rs` — `compute_state` (Lines 48-64), `src-tauri/src/logger.rs` (Lines 126-148)
 - **Description**: Any port appearing under more than one PID yields
@@ -110,7 +110,7 @@ destructive-action UX, and duplicated policy tables.
   `project_path` between listeners. Same-executable multi-PID listeners should surface as
   an "N workers" annotation on a single row.
 
-## [ ] Task: Linux silently requires two tools; only one is covered by preflight
+## [x] Task: Linux silently requires two tools; only one is covered by preflight
 
 - **Location**: `src-tauri/src/scanner.rs` — `scan_unix` (Line 326), `preflight` (Lines 93-95); `src-tauri/src/connections.rs` — `get_connections_linux` (Lines 340-345)
 - **Description**: The listener scan shells out to `lsof` while the connection graph uses
