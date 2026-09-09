@@ -156,7 +156,7 @@ destructive-action UX, and duplicated policy tables.
   `*_with(ports: &[PortInfo])` variants). Back off the tray interval when the window is
   hidden. Drop either the interval or the event-driven `refreshTraffic`.
 
-## [ ] Task: No React error boundary in a frameless, close-intercepting window
+## [x] Task: No React error boundary in a frameless, close-intercepting window
 
 - **Location**: `src/main.tsx` (Lines 6-10), `src/App.tsx`
 - **Description**: The tree renders with no `ErrorBoundary`. Any render-phase exception —
