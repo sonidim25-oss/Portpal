@@ -10,15 +10,21 @@ export function Sparkline({ data, width = 64, height = 20 }: SparklineProps) {
   }
 
   const max = Math.max(...data, 1);
+  const strokeWidth = 1.5;
+  // Inset the y-range by half the stroke so the extreme points sit fully
+  // inside the viewport instead of having half their stroke clipped.
+  const halfStroke = strokeWidth / 2;
+  const top = halfStroke;
+  const bottom = height - halfStroke;
   const points = data.map((value, index) => {
     const x = (index / (data.length - 1)) * width;
-    const y = height - (value / max) * (height - 2);
+    const y = bottom - (value / max) * (bottom - top);
     return `${x},${y}`;
   }).join(' ');
 
   return (
     <svg width={width} height={height} className="secondary-sparkline" aria-hidden="true">
-      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

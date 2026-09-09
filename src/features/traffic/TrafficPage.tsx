@@ -16,6 +16,8 @@ interface TrafficPageProps {
 
 export function TrafficPage({ ports, traffic, loading, error, onRetry }: TrafficPageProps) {
   const total = Object.values(traffic).reduce((sum, samples) => sum + (samples[samples.length - 1]?.connections ?? 0), 0);
+  // Sum of per-port maxima, not a simultaneously observed total: each port's
+  // peak may have occurred at a different instant. Labelled accordingly below.
   const peak = Object.values(traffic).reduce((sum, samples) => sum + Math.max(0, ...samples.map((sample) => sample.connections)), 0);
 
   return (
@@ -25,7 +27,7 @@ export function TrafficPage({ ports, traffic, loading, error, onRetry }: Traffic
       <div className="secondary-summary-grid secondary-summary-grid-three">
         <Summary label="Active Ports" value={ports.length} />
         <Summary label="Current Connections" value={total} />
-        <Summary label="Peak (Session)" value={peak} />
+        <Summary label="Sum of peaks" value={peak} />
       </div>
       {/* Loading, empty, and failed are three different answers: only claim
           there is nothing listening once a scan has actually come back. */}

@@ -193,7 +193,7 @@ fn validate_kill(pid: u32, ports: &[PortInfo], additional_critical_ports: &[u16]
     }
     for listener in listeners {
         let name = listener.process_name.to_ascii_lowercase();
-        let name = name.trim_end_matches(".exe");
+        let name = name.strip_suffix(".exe").unwrap_or(&name);
         if ["system", "svchost", "lsass", "postgres", "redis-server", "mysqld", "mongod"].contains(&name)
             || CRITICAL_PORTS.contains(&listener.port)
             || additional_critical_ports.contains(&listener.port)

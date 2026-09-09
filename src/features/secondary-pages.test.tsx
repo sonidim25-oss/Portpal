@@ -49,7 +49,7 @@ describe('secondary pages', () => {
     render(<TrafficPage ports={ports} traffic={traffic} loading={false} error="traffic unavailable" onRetry={onRetry} />);
 
     expect(screen.getByText('Current Connections').previousElementSibling).toHaveTextContent('10');
-    expect(screen.getByText('Peak (Session)').previousElementSibling).toHaveTextContent('12');
+    expect(screen.getByText('Sum of peaks').previousElementSibling).toHaveTextContent('12');
     const row = screen.getByRole('listitem', { name: /port 3000 traffic/i });
     expect(within(row).getByText('current').parentElement).toHaveTextContent('5 current');
     expect(within(row).getByText('peak').parentElement).toHaveTextContent('5 peak');

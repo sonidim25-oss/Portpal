@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -24,20 +24,21 @@ pub struct TrafficSample {
 /// Per-port traffic history
 #[derive(Clone, Debug)]
 struct PortTraffic {
-    samples: Vec<TrafficSample>,
+    samples: VecDeque<TrafficSample>,
 }
 
 impl PortTraffic {
     fn new() -> Self {
-        Self { samples: Vec::new() }
+        Self { samples: VecDeque::new() }
     }
 
     fn push(&mut self, conns: usize) {
         let ts = now_millis();
-        self.samples.push(TrafficSample { connections: conns, timestamp: ts });
+        self.samples.push_back(TrafficSample { connections: conns, timestamp: ts });
         // Keep last 30 samples (~60 seconds at 2s interval)
         if self.samples.len() > 30 {
-            self.samples.remove(0);
+            // pop_front rotates a bounded queue in O(1); Vec::remove(0) shifts it.
+            let _ = self.samples.pop_front();
         }
     }
 }
