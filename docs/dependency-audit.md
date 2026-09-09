@@ -97,26 +97,18 @@ Verified against the production build in headless Chromium (`vite preview` +
 Playwright): title is `PortPal`, the strict policy is present, and there are
 zero CSP violations and zero CSP console errors.
 
-#### Known gap: remote webfonts
+#### Resolved: local vendored webfonts
 
-`src/styles/tokens.css:1` still does
-`@import url('https://fonts.googleapis.com/css2?family=Geist&family=JetBrains+Mono')`,
-so the CSP has to allow `https://fonts.googleapis.com` in `style-src` and
-`https://fonts.gstatic.com` in `font-src`. Those two origins are the **only**
-remote hosts the policy permits — remote script, frame, object, and
-`connect-src` are all still fully blocked, which is the surface that matters
-for a webview RCE.
+`src/styles/tokens.css` previously loaded Geist and JetBrains Mono via Google
+Fonts `@import`, requiring `https://fonts.googleapis.com` in `style-src` and
+`https://fonts.gstatic.com` in `font-src`.
 
-The remaining cost is privacy and offline behaviour, not code execution: a
-desktop app should not phone Google on every launch, and the UI reflows to the
-fallback stacks when the machine is offline. The fix is to vendor the woff2
-files into `public/fonts/` and swap the `@import` for local `@font-face`
-rules; the two origins then come straight back out of the CSP, `.env*`, and
-`tauri.conf.json`. That was left out of this pass deliberately — it commits
-binary assets and changes rendering, which is a product decision rather than a
-capability-audit one. Simply deleting the `@import` is *not* equivalent:
-neither Geist nor JetBrains Mono is installed on a stock Windows machine, so
-the app would silently fall back to the system sans and Consolas.
+Both font families are now vendored as WOFF2 assets in `public/fonts/` and
+declared via local `@font-face` rules in `src/styles/tokens.css`. The two Google
+origins have been removed from all CSP definitions (`.env`, `.env.production`,
+`.env.development`, and `src-tauri/tauri.conf.json`). The app no longer makes
+outbound network requests on launch, renders consistently offline, and maintains
+a strict `default-src 'self'` policy with zero remote origins.
 
 ### Not bumped, by policy
 

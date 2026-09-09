@@ -124,7 +124,7 @@ destructive-action UX, and duplicated policy tables.
   surface a degraded state for the graph/traffic surfaces. Separately, use `ss -ltnp` for
   the Linux listener scan so the platform needs one tool, keeping `lsof` as fallback.
 
-## [ ] Task: The packaged desktop app fetches webfonts from Google at runtime
+## [x] Task: The packaged desktop app fetches webfonts from Google at runtime
 
 - **Location**: `src/styles/tokens.css` (Line 1), `.env` (Line 16), `.env.production` (Line 12), `src-tauri/tauri.conf.json` (Line 14)
 - **Description**: `tokens.css` opens with a remote `@import` of the Google Fonts

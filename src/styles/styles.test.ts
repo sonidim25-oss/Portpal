@@ -11,7 +11,8 @@ describe("global style foundation", () => {
   });
 
   it("loads the Geist and JetBrains Mono families with the token layer", () => {
-    expect(tokenStyles).toContain("family=Geist");
-    expect(tokenStyles).toContain("family=JetBrains+Mono");
+    expect(tokenStyles).toContain("font-family: 'Geist'");
+    expect(tokenStyles).toContain("font-family: 'JetBrains Mono'");
+    expect(tokenStyles).not.toContain("fonts.googleapis.com");
   });
 });
