@@ -1,7 +1,14 @@
 use serde::Serialize;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Poll interval of the tray watcher thread (see `tray.rs`).
+/// Merged per-port traffic is bucketed to this resolution so samples from
+/// independent per-endpoint ring buffers align by instant, not by index.
+const TRAFFIC_BUCKET_MS: u64 = 2000;
+/// Max merged samples returned per port (matches the per-endpoint ring cap).
+const TRAFFIC_MAX_SAMPLES: usize = 30;
 
 /// A single port event (started, stopped, etc.)
 #[derive(Serialize, Clone, Debug)]
@@ -183,23 +190,47 @@ impl PortLogger {
     }
 
     pub fn get_traffic(&self, port: u16) -> Vec<TrafficSample> {
-        // Merge across conflicting PIDs by sample index (sums), so the IPC
-        // contract stays per-port while endpoints are tracked per (port,pid).
-        let mut merged: Vec<TrafficSample> = Vec::new();
-        for ((p, _), t) in &self.traffic {
-            if *p != port {
-                continue;
+        // Merge across conflicting PIDs by timestamp bucket (sums), so the
+        // IPC contract stays per-port while endpoints are tracked per
+        // (port,pid). Index-based merging added unrelated moments: the
+        // per-endpoint vectors are independent ring buffers that began
+        // filling at different times and are trimmed independently.
+        let endpoints: Vec<&PortTraffic> = self
+            .traffic
+            .iter()
+            .filter(|((p, _), _)| *p == port)
+            .map(|(_, t)| t)
+            .collect();
+        if endpoints.is_empty() {
+            return Vec::new();
+        }
+        // Fast path: single listener needs no merge and stays exact.
+        if endpoints.len() == 1 {
+            return endpoints[0].samples.iter().cloned().collect();
+        }
+        // Multi-listener: one sample per bucket. Each endpoint collapses to
+        // bucket -> connections first (last sample wins, samples are
+        // chronological) so a fast-pushing endpoint cannot double-count
+        // within a bucket; then buckets sum across endpoints and an endpoint
+        // missing a bucket contributes zero instead of shifting alignment.
+        let mut merged: BTreeMap<u64, usize> = BTreeMap::new();
+        for t in endpoints {
+            let mut collapsed: BTreeMap<u64, usize> = BTreeMap::new();
+            for s in &t.samples {
+                let bucket = s.timestamp / TRAFFIC_BUCKET_MS * TRAFFIC_BUCKET_MS;
+                collapsed.insert(bucket, s.connections);
             }
-            for (i, s) in t.samples.iter().enumerate() {
-                if let Some(slot) = merged.get_mut(i) {
-                    slot.connections += s.connections;
-                    slot.timestamp = slot.timestamp.max(s.timestamp);
-                } else {
-                    merged.push(s.clone());
-                }
+            for (bucket, conns) in collapsed {
+                *merged.entry(bucket).or_insert(0) += conns;
             }
         }
+        // Keep the contract bounded like the per-endpoint rings.
+        let skip = merged.len().saturating_sub(TRAFFIC_MAX_SAMPLES);
         merged
+            .into_iter()
+            .skip(skip)
+            .map(|(timestamp, connections)| TrafficSample { connections, timestamp })
+            .collect()
     }
 
     pub fn get_all_traffic(&self) -> HashMap<u16, Vec<TrafficSample>> {
@@ -355,5 +386,60 @@ mod tests {
         let all = lg.get_all_traffic();
         assert_eq!(all[&3000][0].connections, 2);
         assert_eq!(all[&5173][0].connections, 5);
+    }
+
+    fn inject_traffic(lg: &mut PortLogger, port: u16, pid: u32, samples: &[(usize, u64)]) {
+        let entry = lg.traffic.entry((port, pid)).or_insert_with(PortTraffic::new);
+        for (conns, ts) in samples {
+            entry.samples.push_back(TrafficSample { connections: *conns, timestamp: *ts });
+        }
+    }
+
+    #[test]
+    fn traffic_merge_aligns_by_bucket_not_index() {
+        // Two endpoints whose ring buffers began at different times: the
+        // late joiner must not shift alignment, and its missing bucket
+        // contributes zero.
+        let mut lg = PortLogger::new();
+        let base: u64 = 1_000_000; // already aligned to TRAFFIC_BUCKET_MS
+        inject_traffic(&mut lg, 3000, 111, &[(5, base), (5, base + 2000), (5, base + 4000)]);
+        inject_traffic(&mut lg, 3000, 222, &[(7, base + 2000 + 100), (7, base + 4000 + 100)]);
+        let merged = lg.get_traffic(3000);
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0].timestamp, base);
+        assert_eq!(merged[0].connections, 5); // late joiner absent -> zero
+        assert_eq!(merged[1].timestamp, base + 2000);
+        assert_eq!(merged[1].connections, 12);
+        assert_eq!(merged[2].timestamp, base + 4000);
+        assert_eq!(merged[2].connections, 12);
+    }
+
+    #[test]
+    fn traffic_merge_collapses_same_bucket_per_endpoint() {
+        // Two pushes from one endpoint inside a single bucket count once
+        // (last wins), not twice.
+        let mut lg = PortLogger::new();
+        let base: u64 = 2_000_000;
+        inject_traffic(&mut lg, 3000, 111, &[(3, base + 10), (9, base + 20)]);
+        inject_traffic(&mut lg, 3000, 222, &[(4, base + 30)]);
+        let merged = lg.get_traffic(3000);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].timestamp, base);
+        assert_eq!(merged[0].connections, 13);
+    }
+
+    #[test]
+    fn traffic_merge_capped_at_30_buckets() {
+        let mut lg = PortLogger::new();
+        let base: u64 = 10_000_000;
+        let a: Vec<(usize, u64)> = (0..35).map(|i| (1, base + i * 2000)).collect();
+        let b: Vec<(usize, u64)> = (0..35).map(|i| (1, base + i * 2000)).collect();
+        inject_traffic(&mut lg, 3000, 111, &a);
+        inject_traffic(&mut lg, 3000, 222, &b);
+        let merged = lg.get_traffic(3000);
+        assert_eq!(merged.len(), 30);
+        // Most-recent buckets survive the cap.
+        assert_eq!(merged.last().unwrap().timestamp, base + 34 * 2000);
+        assert_eq!(merged.last().unwrap().connections, 2);
     }
 }
