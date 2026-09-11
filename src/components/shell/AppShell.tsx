@@ -1,8 +1,8 @@
-import type { ReactNode } from "react";
-import type { NavPage, PortInfo } from "../../app/types";
-import { Sidebar } from "./Sidebar";
-import { Titlebar } from "./Titlebar";
-import "./shell.css";
+import type { ReactNode } from 'react';
+import type { NavPage, PortInfo } from '../../app/types';
+import { Sidebar } from './Sidebar';
+import { Titlebar } from './Titlebar';
+import './shell.css';
 
 type AppShellProps = {
   page: NavPage;

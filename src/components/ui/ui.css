@@ -4,7 +4,10 @@
   border: 1px solid var(--border-default);
   border-radius: 7px;
   cursor: pointer;
-  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .ui-button {
@@ -78,7 +81,9 @@
   border-radius: 7px;
   background: var(--surface-primary);
   color: var(--text-primary);
-  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 .ui-search-input::placeholder {
@@ -118,7 +123,7 @@
   color: var(--text-secondary);
 }
 
-.ui-segmented-control__option[aria-pressed="true"] {
+.ui-segmented-control__option[aria-pressed='true'] {
   background: var(--surface-selected);
   color: var(--text-primary);
 }

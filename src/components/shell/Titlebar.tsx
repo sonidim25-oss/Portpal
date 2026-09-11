@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { IconButton } from "../ui/controls";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { IconButton } from '../ui/controls';
 
-type PendingAction = "minimize" | "maximize" | "close" | null;
+type PendingAction = 'minimize' | 'maximize' | 'close' | null;
 
 const STATUS_DURATION_MS = 3000;
 
@@ -24,11 +24,11 @@ export function Titlebar() {
   }, []);
 
   const handleMinimize = useCallback(async () => {
-    setPending("minimize");
+    setPending('minimize');
     try {
       await getCurrentWindow().minimize();
     } catch (error) {
-      console.error("Minimize failed", error);
+      console.error('Minimize failed', error);
       showStatus("Couldn't minimize the window. Try again.");
     } finally {
       setPending(null);
@@ -36,14 +36,14 @@ export function Titlebar() {
   }, [showStatus]);
 
   const handleClose = useCallback(async () => {
-    setPending("close");
+    setPending('close');
     try {
       // Backend intercepts close (prevent_close + hide): the window hides to
       // the tray instead of quitting, so confirm that affordance on success.
       await getCurrentWindow().close();
-      showStatus("Minimized to tray — PortPal keeps running in the background.");
+      showStatus('Minimized to tray — PortPal keeps running in the background.');
     } catch (error) {
-      console.error("Close failed", error);
+      console.error('Close failed', error);
       showStatus("Couldn't minimize to tray. Try again.");
     } finally {
       setPending(null);
@@ -51,7 +51,7 @@ export function Titlebar() {
   }, [showStatus]);
 
   const handleToggleMaximize = useCallback(async () => {
-    setPending("maximize");
+    setPending('maximize');
     const win = getCurrentWindow();
     try {
       await win.toggleMaximize();
@@ -67,7 +67,7 @@ export function Titlebar() {
         }
         return;
       } catch (fallbackError) {
-        console.error("Maximize failed", fallbackError, error);
+        console.error('Maximize failed', fallbackError, error);
         showStatus("Couldn't change the window size. Try again.");
       }
     } finally {
@@ -78,7 +78,11 @@ export function Titlebar() {
   const busy = pending !== null;
 
   return (
-    <header className="shell-titlebar" data-tauri-drag-region onDoubleClick={() => void handleToggleMaximize()}>
+    <header
+      className="shell-titlebar"
+      data-tauri-drag-region
+      onDoubleClick={() => void handleToggleMaximize()}
+    >
       {status && (
         <div className="shell-titlebar__status" role="status">
           {status}
@@ -91,7 +95,9 @@ export function Titlebar() {
           onClick={() => void handleMinimize()}
           disabled={busy}
         >
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 8h10" />
+          </svg>
         </IconButton>
         <IconButton
           className="shell-titlebar__button"
@@ -99,7 +105,9 @@ export function Titlebar() {
           onClick={() => void handleToggleMaximize()}
           disabled={busy}
         >
-          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" /></svg>
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="4" y="4" width="8" height="8" />
+          </svg>
         </IconButton>
         <IconButton
           className="shell-titlebar__button shell-titlebar__button--close"
@@ -107,7 +115,9 @@ export function Titlebar() {
           onClick={() => void handleClose()}
           disabled={busy}
         >
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg>
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m4.5 4.5 7 7m0-7-7 7" />
+          </svg>
         </IconButton>
       </div>
     </header>

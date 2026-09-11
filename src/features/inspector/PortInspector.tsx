@@ -1,9 +1,9 @@
-import { useEffect } from "react";
-import type { PortInfo, TrafficSample } from "../../app/types";
-import { Button, IconButton } from "../../components/ui/controls";
-import { PortInfoCard } from "../../port-intel";
-import { buildInspectorModel, type InspectorDetail } from "./portInspectorModel";
-import "./PortInspector.css";
+import { useEffect } from 'react';
+import type { PortInfo, TrafficSample } from '../../app/types';
+import { Button, IconButton } from '../../components/ui/controls';
+import { PortInfoCard } from '../../port-intel';
+import { buildInspectorModel, type InspectorDetail } from './portInspectorModel';
+import './PortInspector.css';
 
 export type PortInspectorProps = {
   port: PortInfo;
@@ -28,12 +28,14 @@ function InspectorSection({ title, rows }: InspectorSectionProps) {
 
   return (
     <section className="port-inspector__section" aria-labelledby={headingId}>
-      <h3 id={headingId} className="port-inspector__section-title">{title}</h3>
+      <h3 id={headingId} className="port-inspector__section-title">
+        {title}
+      </h3>
       <dl className="port-inspector__details">
         {rows.map((row) => (
           <div className="port-inspector__detail" key={row.label}>
             <dt>{row.label}</dt>
-            <dd className={row.mono ? "port-inspector__value--mono" : undefined}>{row.value}</dd>
+            <dd className={row.mono ? 'port-inspector__value--mono' : undefined}>{row.value}</dd>
           </div>
         ))}
       </dl>
@@ -55,11 +57,11 @@ export function PortInspector({
 }: PortInspectorProps) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === 'Escape') onClose();
     };
 
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
 
   const connections = traffic[traffic.length - 1]?.connections ?? 0;
@@ -67,15 +69,17 @@ export function PortInspector({
   const pending = killing.has(port.pid) || restarting.has(port.pid);
   const projectRows: InspectorDetail[] = model.project
     ? [
-      ...(model.project.name ? [{ label: "Name", value: model.project.name, mono: false }] : []),
-      ...(model.project.path ? [{ label: "Path", value: model.project.path, mono: true }] : []),
-    ]
+        ...(model.project.name ? [{ label: 'Name', value: model.project.name, mono: false }] : []),
+        ...(model.project.path ? [{ label: 'Path', value: model.project.path, mono: true }] : []),
+      ]
     : [];
   const processRows: InspectorDetail[] = model.process
     ? [
-      { label: "Name", value: model.process.name, mono: true },
-      ...(model.process.command ? [{ label: "Command", value: model.process.command, mono: true }] : []),
-    ]
+        { label: 'Name', value: model.process.name, mono: true },
+        ...(model.process.command
+          ? [{ label: 'Command', value: model.process.command, mono: true }]
+          : []),
+      ]
     : [];
 
   return (
@@ -103,7 +107,11 @@ export function PortInspector({
       {(model.actions.canKill || model.actions.canRestart) && (
         <footer className="port-inspector__actions">
           {model.actions.canRestart && (
-            <Button onClick={() => onRestart(port)} disabled={pending} className="port-inspector__action">
+            <Button
+              onClick={() => onRestart(port)}
+              disabled={pending}
+              className="port-inspector__action"
+            >
               Restart Process
             </Button>
           )}

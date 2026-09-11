@@ -36,7 +36,10 @@ export function PortInfoCard({
   const note = CONFIDENCE_NOTE[explanation.confidence];
 
   return (
-    <div className={['pi-card', className].filter(Boolean).join(' ')} data-category={explanation.category}>
+    <div
+      className={['pi-card', className].filter(Boolean).join(' ')}
+      data-category={explanation.category}
+    >
       <div className="pi-card__head">
         <CategoryIcon category={explanation.category} size={20} className="pi-card__icon" />
         <Heading className="pi-card__title">{explanation.headline}</Heading>

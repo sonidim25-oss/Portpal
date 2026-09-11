@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import capability from "../../src-tauri/capabilities/default.json";
+import { describe, expect, it } from 'vitest';
+import capability from '../../src-tauri/capabilities/default.json';
 
 // The IPC surface this webview is allowed to reach, asserted as an exact set.
 //
@@ -17,42 +17,44 @@ const EXPECTED_PERMISSIONS = [
   // scan-degraded / scan-recovered, and the unlisten() returned by each,
   // called from usePortPalData's effect cleanup. emit/emit_to are NOT granted:
   // nothing in the webview emits to the backend.
-  "core:event:allow-listen",
-  "core:event:allow-unlisten",
+  'core:event:allow-listen',
+  'core:event:allow-unlisten',
   // src/components/shell/Titlebar.tsx — the frameless window's own controls.
-  "core:window:allow-minimize",
-  "core:window:allow-maximize",
-  "core:window:allow-unmaximize",
-  "core:window:allow-toggle-maximize",
-  "core:window:allow-is-maximized",
-  "core:window:allow-close",
+  'core:window:allow-minimize',
+  'core:window:allow-maximize',
+  'core:window:allow-unmaximize',
+  'core:window:allow-toggle-maximize',
+  'core:window:allow-is-maximized',
+  'core:window:allow-close',
   // Tauri's injected drag.js, for the header's data-tauri-drag-region:
   // start_dragging on mousedown, internal_toggle_maximize on double click.
   // start_dragging is absent from core:window:default, so dragging the
   // frameless window was denied at runtime until it was listed here.
-  "core:window:allow-start-dragging",
-  "core:window:allow-internal-toggle-maximize",
+  'core:window:allow-start-dragging',
+  'core:window:allow-internal-toggle-maximize',
   // Tauri's injected toggle-devtools.js (Ctrl/Cmd+Shift+I). Both the script and
   // the command are cfg(debug_assertions) / feature = "devtools", so this grants
   // nothing in a release build.
-  "core:webview:allow-internal-toggle-devtools",
+  'core:webview:allow-internal-toggle-devtools',
 ] as const;
 
-describe("main window capability", () => {
-  it("grants exactly the permissions the frontend uses", () => {
+describe('main window capability', () => {
+  it('grants exactly the permissions the frontend uses', () => {
     expect([...capability.permissions].sort()).toEqual([...EXPECTED_PERMISSIONS].sort());
   });
 
-  it("grants no aggregate permission set", () => {
+  it('grants no aggregate permission set', () => {
     // `core:default` and any `core:<plugin>:default` pull in whole command
     // groups, which is how unused capabilities (path, resources, tray, menu,
     // image, app metadata) end up reachable from the webview in an app whose
     // IPC can kill processes.
-    const aggregates = capability.permissions.filter((permission) => permission.endsWith(":default"));
+    const aggregates = capability.permissions.filter((permission) =>
+      permission.endsWith(':default'),
+    );
     expect(aggregates).toEqual([]);
   });
 
-  it("is scoped to the main window", () => {
-    expect(capability.windows).toEqual(["main"]);
+  it('is scoped to the main window', () => {
+    expect(capability.windows).toEqual(['main']);
   });
 });

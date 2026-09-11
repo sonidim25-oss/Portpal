@@ -53,9 +53,15 @@ describe('getServiceName', () => {
   });
   it('prefers the service label for system ports even when a project_name leaks', () => {
     // Postgres started from a project folder still reads as Postgres primary.
-    expect(getServiceName(basePort({ port: 5432, process_name: 'postgres', project_name: 'myapp' }))).toBe('Postgres Server');
-    expect(getServiceName(basePort({ port: 3306, process_name: 'mysqld', project_name: 'shop' }))).toBe('MySQL Server');
-    expect(getServiceName(basePort({ port: 6379, process_name: 'redis-server', project_name: 'shop' }))).toBe('Redis Server');
+    expect(
+      getServiceName(basePort({ port: 5432, process_name: 'postgres', project_name: 'myapp' })),
+    ).toBe('Postgres Server');
+    expect(
+      getServiceName(basePort({ port: 3306, process_name: 'mysqld', project_name: 'shop' })),
+    ).toBe('MySQL Server');
+    expect(
+      getServiceName(basePort({ port: 6379, process_name: 'redis-server', project_name: 'shop' })),
+    ).toBe('Redis Server');
   });
 });
 
@@ -68,14 +74,33 @@ describe('service naming precedence', () => {
     expect(isSystemServicePort(basePort({ port: 5173 }))).toBe(false);
   });
   it('returns the folder as secondary for system services and the framework for dev projects', () => {
-    expect(getServiceSecondary(basePort({ port: 5432, process_name: 'postgres', project_name: 'myapp' }))).toBe('myapp');
+    expect(
+      getServiceSecondary(
+        basePort({ port: 5432, process_name: 'postgres', project_name: 'myapp' }),
+      ),
+    ).toBe('myapp');
     expect(getServiceSecondary(basePort({ port: 3000, project_name: 'myapp' }))).toBe('React');
     expect(getServiceSecondary(basePort({ port: 3000, project_name: null }))).toBeNull();
-    expect(getServiceSecondary(basePort({ port: 9999, process_name: 'custom.exe', project_name: null }))).toBeNull();
+    expect(
+      getServiceSecondary(basePort({ port: 9999, process_name: 'custom.exe', project_name: null })),
+    ).toBeNull();
   });
   it('never misclassifies system services as dev when project metadata leaks', () => {
-    expect(classifyPort(basePort({ port: 5432, process_name: 'postgres', project_name: 'myapp', project_path: 'C:\\work\\myapp' }))).toBe('system');
-    expect(classifyPort(basePort({ port: 49664, process_name: 'lsass.exe', project_path: 'C:\\Windows' }))).toBe('system');
+    expect(
+      classifyPort(
+        basePort({
+          port: 5432,
+          process_name: 'postgres',
+          project_name: 'myapp',
+          project_path: 'C:\\work\\myapp',
+        }),
+      ),
+    ).toBe('system');
+    expect(
+      classifyPort(
+        basePort({ port: 49664, process_name: 'lsass.exe', project_path: 'C:\\Windows' }),
+      ),
+    ).toBe('system');
     expect(classifyPort(basePort({ port: 3000, project_name: 'myapp' }))).toBe('dev');
   });
 });
@@ -103,7 +128,13 @@ describe('groupPortsByService', () => {
   });
   it('never merges a folder named like a system service with the real service', () => {
     const groups = groupPortsByService([
-      basePort({ port: 3000, pid: 101, process_name: 'node', project_name: 'Postgres', project_path: '/work/postgres-demo' }),
+      basePort({
+        port: 3000,
+        pid: 101,
+        process_name: 'node',
+        project_name: 'Postgres',
+        project_path: '/work/postgres-demo',
+      }),
       basePort({ port: 5432, pid: 103, process_name: 'postgres', project_name: null }),
     ]);
     expect(groups).toHaveLength(2);
@@ -135,8 +166,14 @@ describe('getStatus', () => {
     }
   });
   it('returns LISTENING for non-dev port', () => {
-    expect(getStatus(basePort({ port: 9999 }))).toEqual({ label: 'LISTENING', cls: 'status-listening' });
-    expect(getStatus(basePort({ port: 49664 }))).toEqual({ label: 'LISTENING', cls: 'status-listening' });
+    expect(getStatus(basePort({ port: 9999 }))).toEqual({
+      label: 'LISTENING',
+      cls: 'status-listening',
+    });
+    expect(getStatus(basePort({ port: 49664 }))).toEqual({
+      label: 'LISTENING',
+      cls: 'status-listening',
+    });
   });
 });
 
@@ -195,7 +232,9 @@ describe('filterPorts', () => {
     expect(filterPorts(ports, 'LSASS', 'all')).toEqual([expect.objectContaining({ port: 49664 })]);
   });
   it('search by project_name', () => {
-    expect(filterPorts(ports, 'my-react', 'all')).toEqual([expect.objectContaining({ port: 3000 })]);
+    expect(filterPorts(ports, 'my-react', 'all')).toEqual([
+      expect.objectContaining({ port: 3000 }),
+    ]);
   });
   it('trims and lowercases search', () => {
     expect(filterPorts(ports, '  my-react  ', 'all')).toHaveLength(1);
@@ -208,7 +247,12 @@ describe('filterPorts', () => {
 
 describe('port presentation selectors', () => {
   const ports: PortInfo[] = [
-    basePort({ port: 3000, project_name: 'PortPal', project_path: 'C:\\work\\PortPal', start_cmd: 'npm run dev' }),
+    basePort({
+      port: 3000,
+      project_name: 'PortPal',
+      project_path: 'C:\\work\\PortPal',
+      start_cmd: 'npm run dev',
+    }),
     basePort({ port: 5173 }),
     basePort({ port: 5432, process_name: 'postgres' }),
     basePort({ port: 49664, process_name: 'lsass.exe' }),
@@ -245,18 +289,52 @@ describe('port presentation selectors', () => {
       [restartablePort.port]: [{ connections: 0, timestamp: 1 }],
     };
 
-    expect(filterPorts(ports, '', 'all', { protocol: 'TCP', project: 'with-project', restartableOnly: false, connectedOnly: false })).toEqual([restartablePort]);
-    expect(filterPorts(ports, '', 'all', { protocol: 'all', project: 'all', restartableOnly: true, connectedOnly: false })).toEqual([restartablePort]);
-    expect(filterPorts(ports, '', 'all', { protocol: 'all', project: 'all', restartableOnly: false, connectedOnly: true }, traffic)).toEqual([connectedPort]);
+    expect(
+      filterPorts(ports, '', 'all', {
+        protocol: 'TCP',
+        project: 'with-project',
+        restartableOnly: false,
+        connectedOnly: false,
+      }),
+    ).toEqual([restartablePort]);
+    expect(
+      filterPorts(ports, '', 'all', {
+        protocol: 'all',
+        project: 'all',
+        restartableOnly: true,
+        connectedOnly: false,
+      }),
+    ).toEqual([restartablePort]);
+    expect(
+      filterPorts(
+        ports,
+        '',
+        'all',
+        { protocol: 'all', project: 'all', restartableOnly: false, connectedOnly: true },
+        traffic,
+      ),
+    ).toEqual([connectedPort]);
   });
 
   it('returns the most recent connection count and unique process count', () => {
-    expect(latestConnectionCount({ 3000: [{ connections: 1, timestamp: 1 }, { connections: 4, timestamp: 2 }] }, basePort())).toBe(4);
+    expect(
+      latestConnectionCount(
+        {
+          3000: [
+            { connections: 1, timestamp: 1 },
+            { connections: 4, timestamp: 2 },
+          ],
+        },
+        basePort(),
+      ),
+    ).toBe(4);
     expect(latestConnectionCount({}, basePort())).toBe(0);
-    expect(uniqueProcessCount([
-      basePort({ pid: 1, process_name: 'node' }),
-      basePort({ pid: 2, process_name: 'node' }),
-      basePort({ pid: 3, process_name: 'python' }),
-    ])).toBe(2);
+    expect(
+      uniqueProcessCount([
+        basePort({ pid: 1, process_name: 'node' }),
+        basePort({ pid: 2, process_name: 'node' }),
+        basePort({ pid: 3, process_name: 'python' }),
+      ]),
+    ).toBe(2);
   });
 });

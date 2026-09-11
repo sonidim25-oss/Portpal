@@ -1,0 +1,56 @@
+name: Hygiene
+
+# Formatting gates (fail the run) plus Clippy as an advisory signal.
+#
+# Clippy is intentionally NOT `-D warnings` yet: the tree carries pre-existing
+# warnings (a zombie_processes case that needs design review before touching
+# the restart path, dead_code helpers, type_complexity) that are out of scope
+# for a formatting PR. Promote it to a hard gate once those are triaged.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Prettier check
+        run: npm run format:check
+
+  rust-hygiene:
+    # Windows: Tauri's Linux system dependencies (glib-sys, gobject-sys, …)
+    # are not installed on ubuntu-latest, so a compile-based lint cannot run
+    # there without apt-installing GTK. Windows needs no extra setup
+    # (see build.yml) and matches the primary dev environment.
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: cargo fmt check
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: cargo clippy (advisory)
+        working-directory: src-tauri
+        run: cargo clippy --all-targets

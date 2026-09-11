@@ -33,12 +33,14 @@ export const tauriPortPalGateway: PortPalGateway = {
   // directory come from the backend's trusted store, so script running in this
   // webview cannot ask the host to execute anything of its choosing.
   restartProcess: (port, pid) => invoke<void>('restart_process', { port, pid }),
-  onPortsUpdated: (handler) => listen<PortInfo[]>('ports-updated', (event) => handler(event.payload)),
+  onPortsUpdated: (handler) =>
+    listen<PortInfo[]>('ports-updated', (event) => handler(event.payload)),
   onPortEvents: (handler) => listen<PortEvent[]>('port-events', (event) => handler(event.payload)),
   // The background scanner skips a tick it cannot complete rather than
   // reporting an empty list, so these events are the only signal that the
   // visible ports have gone stale.
-  onScanDegraded: (handler) => listen<ScanError>('scan-degraded', (event) => handler(event.payload)),
+  onScanDegraded: (handler) =>
+    listen<ScanError>('scan-degraded', (event) => handler(event.payload)),
   onScanRecovered: (handler) => listen<null>('scan-recovered', () => handler()),
   // Separate from `ports-updated`, which only fires when the port list
   // actually differs: "the scanner is alive" and "the data changed" are

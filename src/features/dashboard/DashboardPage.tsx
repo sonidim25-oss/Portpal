@@ -1,6 +1,12 @@
 import type { NavPage, PortEvent, PortInfo, TrafficByPort } from '../../app/types';
 import { Sparkline } from '../../components/ui/Sparkline';
-import { DEV_PORTS, getServiceName, getServiceSecondary, portEndpointKey, timeAgo } from '../../utils/helpers';
+import {
+  DEV_PORTS,
+  getServiceName,
+  getServiceSecondary,
+  portEndpointKey,
+  timeAgo,
+} from '../../utils/helpers';
 import { ErrorNotice } from '../ErrorNotice';
 
 interface DashboardPageProps {
@@ -14,9 +20,19 @@ interface DashboardPageProps {
   onNavigate(page: NavPage): void;
 }
 
-export function DashboardPage({ ports, events, traffic, error, onRetry, onNavigate }: DashboardPageProps) {
+export function DashboardPage({
+  ports,
+  events,
+  traffic,
+  error,
+  onRetry,
+  onNavigate,
+}: DashboardPageProps) {
   const frameworks = new Set(ports.map((port) => DEV_PORTS[port.port]?.label).filter(Boolean));
-  const connections = Object.values(traffic).reduce((total, samples) => total + (samples[samples.length - 1]?.connections ?? 0), 0);
+  const connections = Object.values(traffic).reduce(
+    (total, samples) => total + (samples[samples.length - 1]?.connections ?? 0),
+    0,
+  );
   const eventsToday = events.filter((event) => Date.now() - event.timestamp < 86_400_000).length;
 
   return (
@@ -40,8 +56,14 @@ export function DashboardPage({ ports, events, traffic, error, onRetry, onNaviga
                 <span className="secondary-state">Active</span>
               </div>
               <div className="secondary-muted">{getServiceName(port)}</div>
-              {getServiceSecondary(port) && <div className="secondary-muted">{getServiceSecondary(port)}</div>}
-              <Sparkline data={(traffic[port.port] ?? []).map((sample) => sample.connections)} width={100} height={24} />
+              {getServiceSecondary(port) && (
+                <div className="secondary-muted">{getServiceSecondary(port)}</div>
+              )}
+              <Sparkline
+                data={(traffic[port.port] ?? []).map((sample) => sample.connections)}
+                width={100}
+                height={24}
+              />
             </article>
           ))}
         </div>
@@ -49,7 +71,9 @@ export function DashboardPage({ ports, events, traffic, error, onRetry, onNaviga
 
       <section className="secondary-section">
         <SectionHeading title="Recent Events" onViewAll={() => onNavigate('logs')} />
-        {events.length === 0 ? <p className="secondary-empty-copy">No events yet — start a server to see activity</p> : (
+        {events.length === 0 ? (
+          <p className="secondary-empty-copy">No events yet — start a server to see activity</p>
+        ) : (
           <div className="secondary-list">
             {events.slice(0, 5).map((event, index) => (
               <div key={`${event.timestamp}-${index}`} className="secondary-event-row">
@@ -67,16 +91,45 @@ export function DashboardPage({ ports, events, traffic, error, onRetry, onNaviga
 }
 
 function PageHeading({ title, description }: { title: string; description: string }) {
-  return <header className="secondary-heading"><h2>{title}</h2><p>{description}</p></header>;
+  return (
+    <header className="secondary-heading">
+      <h2>{title}</h2>
+      <p>{description}</p>
+    </header>
+  );
 }
 
-function Summary({ label, value, onClick }: { label: string; value: number; onClick?: () => void }) {
-  const content = <><span className="secondary-summary-value">{value}</span><span className="secondary-summary-label">{label}</span></>;
-  return onClick
-    ? <button className="secondary-summary secondary-summary-button" onClick={onClick}>{content}</button>
-    : <div className="secondary-summary">{content}</div>;
+function Summary({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  onClick?: () => void;
+}) {
+  const content = (
+    <>
+      <span className="secondary-summary-value">{value}</span>
+      <span className="secondary-summary-label">{label}</span>
+    </>
+  );
+  return onClick ? (
+    <button className="secondary-summary secondary-summary-button" onClick={onClick}>
+      {content}
+    </button>
+  ) : (
+    <div className="secondary-summary">{content}</div>
+  );
 }
 
 function SectionHeading({ title, onViewAll }: { title: string; onViewAll(): void }) {
-  return <div className="secondary-section-heading"><h3>{title}</h3><button onClick={onViewAll} aria-label="View all">View all <span aria-hidden="true">→</span></button></div>;
+  return (
+    <div className="secondary-section-heading">
+      <h3>{title}</h3>
+      <button onClick={onViewAll} aria-label="View all">
+        View all <span aria-hidden="true">→</span>
+      </button>
+    </div>
+  );
 }

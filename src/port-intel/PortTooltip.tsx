@@ -36,7 +36,7 @@ export function PortTooltip({ port, children, placement = 'bottom', className }:
         setOpen(false);
       }
     },
-    [open]
+    [open],
   );
 
   return (
@@ -57,7 +57,11 @@ export function PortTooltip({ port, children, placement = 'bottom', className }:
         {children}
       </span>
       {open ? (
-        <span className={`pi-tooltip__panel pi-tooltip__panel--${placement}`} role="tooltip" id={tooltipId}>
+        <span
+          className={`pi-tooltip__panel pi-tooltip__panel--${placement}`}
+          role="tooltip"
+          id={tooltipId}
+        >
           <PortInfoCard port={port} headingLevel="h4" />
         </span>
       ) : null}

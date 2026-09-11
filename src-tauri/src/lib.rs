@@ -1,9 +1,9 @@
+mod connections;
+mod logger;
 mod netaddr;
 mod scanner;
 mod taxonomy;
 mod tray;
-mod connections;
-mod logger;
 
 use std::collections::HashMap;
 

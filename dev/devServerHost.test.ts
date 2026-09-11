@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  LAN_HMR_PORT,
-  LOOPBACK_HOST,
-  isLanOptIn,
-  resolveDevServerExposure,
-} from './devServerHost';
+import { LAN_HMR_PORT, LOOPBACK_HOST, isLanOptIn, resolveDevServerExposure } from './devServerHost';
 
 const LAN_IP = '192.168.1.42';
 
@@ -48,9 +43,9 @@ describe('resolveDevServerExposure', () => {
   it('ignores falsy and unset opt-in values', () => {
     for (const value of [undefined, '', ' ', '0', 'false', 'no']) {
       expect(isLanOptIn({ PORTPAL_ALLOW_LAN: value })).toBe(false);
-      expect(resolveDevServerExposure({ TAURI_DEV_HOST: LAN_IP, PORTPAL_ALLOW_LAN: value }).host).toBe(
-        LOOPBACK_HOST,
-      );
+      expect(
+        resolveDevServerExposure({ TAURI_DEV_HOST: LAN_IP, PORTPAL_ALLOW_LAN: value }).host,
+      ).toBe(LOOPBACK_HOST);
     }
   });
 

@@ -45,15 +45,23 @@ export function isCriticalProcessName(processName: string): boolean {
 // list (taxonomy.rs DEV_PORTS) and both assert against shared/taxonomy.json.
 
 export const DEV_PORTS: readonly { port: number; framework: string }[] = [
-  { port: 3000, framework: 'React' },  { port: 3001, framework: 'React' },
-  { port: 4000, framework: 'Node' },   { port: 4200, framework: 'Angular' },
-  { port: 5173, framework: 'Vite' },   { port: 5174, framework: 'Vite' },
-  { port: 8000, framework: 'Django' }, { port: 8080, framework: 'HTTP' },
+  { port: 3000, framework: 'React' },
+  { port: 3001, framework: 'React' },
+  { port: 4000, framework: 'Node' },
+  { port: 4200, framework: 'Angular' },
+  { port: 5173, framework: 'Vite' },
+  { port: 5174, framework: 'Vite' },
+  { port: 8000, framework: 'Django' },
+  { port: 8080, framework: 'HTTP' },
   { port: 8888, framework: 'Jupyter' },
-  { port: 5432, framework: 'Postgres' }, { port: 3306, framework: 'MySQL' },
-  { port: 6379, framework: 'Redis' },   { port: 27017, framework: 'Mongo' },
-  { port: 9000, framework: 'PHP' },    { port: 1420, framework: 'Tauri' },
-  { port: 4173, framework: 'Vite' },   { port: 2000, framework: 'Node' },
+  { port: 5432, framework: 'Postgres' },
+  { port: 3306, framework: 'MySQL' },
+  { port: 6379, framework: 'Redis' },
+  { port: 27017, framework: 'Mongo' },
+  { port: 9000, framework: 'PHP' },
+  { port: 1420, framework: 'Tauri' },
+  { port: 4173, framework: 'Vite' },
+  { port: 2000, framework: 'Node' },
   { port: 8443, framework: 'HTTPS' },
 ];
 

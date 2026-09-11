@@ -44,29 +44,50 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="app app-shell" style={{ display: 'grid', gridTemplateRows: 'auto 1fr' }}>
           <Titlebar />
-          <main style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '1rem',
-            padding: '2rem',
-            textAlign: 'center',
-            color: 'var(--text-primary, #e4e4e7)',
-          }}>
-            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor"
-              strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-              style={{ opacity: 0.6 }}>
+          <main
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '1rem',
+              padding: '2rem',
+              textAlign: 'center',
+              color: 'var(--text-primary, #e4e4e7)',
+            }}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="48"
+              height="48"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              style={{ opacity: 0.6 }}
+            >
               <circle cx="12" cy="12" r="10" />
               <path d="M12 8v4M12 16h.01" />
             </svg>
             <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>
               Something went wrong
             </h2>
-            <p style={{ margin: 0, maxWidth: '36ch', opacity: 0.7, fontSize: '0.875rem', lineHeight: 1.5 }}>
+            <p
+              style={{
+                margin: 0,
+                maxWidth: '36ch',
+                opacity: 0.7,
+                fontSize: '0.875rem',
+                lineHeight: 1.5,
+              }}
+            >
               An unexpected error crashed the interface. Your ports and processes are unaffected.
             </p>
-            <details style={{ maxWidth: '50ch', textAlign: 'left', fontSize: '0.75rem', opacity: 0.5 }}>
+            <details
+              style={{ maxWidth: '50ch', textAlign: 'left', fontSize: '0.75rem', opacity: 0.5 }}
+            >
               <summary style={{ cursor: 'pointer' }}>Error details</summary>
               <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: '0.5rem' }}>
                 {this.state.error.message}
@@ -74,7 +95,9 @@ export class ErrorBoundary extends Component<Props, State> {
               </pre>
             </details>
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
-              <button type="button" onClick={this.handleReload}
+              <button
+                type="button"
+                onClick={this.handleReload}
                 style={{
                   padding: '0.5rem 1.25rem',
                   borderRadius: '6px',
@@ -84,10 +107,13 @@ export class ErrorBoundary extends Component<Props, State> {
                   fontWeight: 500,
                   cursor: 'pointer',
                   fontSize: '0.875rem',
-                }}>
+                }}
+              >
                 Reload
               </button>
-              <button type="button" onClick={this.handleDismiss}
+              <button
+                type="button"
+                onClick={this.handleDismiss}
                 style={{
                   padding: '0.5rem 1.25rem',
                   borderRadius: '6px',
@@ -97,7 +123,8 @@ export class ErrorBoundary extends Component<Props, State> {
                   fontWeight: 500,
                   cursor: 'pointer',
                   fontSize: '0.875rem',
-                }}>
+                }}
+              >
                 Try to continue
               </button>
             </div>

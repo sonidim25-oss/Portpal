@@ -1,4 +1,7 @@
-# PortPal — New Task List
+# PortPal — Task List (archived, all completed)
+
+> Archived from the repo root on 2026-09-11: every item below is done, kept
+> here as a record. Current work goes on feature branches, not in this file.
 
 Findings from driving the running app (`npm run tauri dev`, Windows 11, branch
 `fix/windows-kill-graceful-handle` = current `main` + the kill-path work) on

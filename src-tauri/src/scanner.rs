@@ -1,10 +1,10 @@
 // `parse_port` serves the Unix scanner and the test helpers; the Windows
 // scanner parses whole rows through `parse_netstat_tcp_row` instead.
-#[cfg(any(target_os = "macos", target_os = "linux", test))]
-use crate::netaddr::parse_port;
 #[cfg(target_os = "windows")]
 use crate::netaddr::parse_netstat_tcp_row;
-use crate::taxonomy::{CRITICAL_PORTS, is_protected_process_name};
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
+use crate::netaddr::parse_port;
+use crate::taxonomy::{is_protected_process_name, CRITICAL_PORTS};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::io;
@@ -57,7 +57,11 @@ pub struct ScanError {
 
 impl ScanError {
     fn new(code: &'static str, tool: &'static str, message: impl Into<String>) -> Self {
-        Self { code, tool, message: message.into() }
+        Self {
+            code,
+            tool,
+            message: message.into(),
+        }
     }
 
     /// The scan never ran because the background worker itself failed, which
@@ -82,11 +86,16 @@ pub(crate) fn resolve_external_tool(tool: &'static str) -> io::Result<PathBuf> {
         let root = std::env::var_os("SystemRoot")
             .or_else(|| std::env::var_os("WINDIR"))
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "SystemRoot is not set"))?;
-        let candidate = PathBuf::from(root).join("System32").join(format!("{tool}.exe"));
+        let candidate = PathBuf::from(root)
+            .join("System32")
+            .join(format!("{tool}.exe"));
         return if is_safe_external_tool_path(&candidate) {
             candidate.canonicalize()
         } else {
-            Err(io::Error::new(io::ErrorKind::NotFound, format!("{tool} is unavailable")))
+            Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("{tool} is unavailable"),
+            ))
         };
     }
 
@@ -110,23 +119,36 @@ pub(crate) fn resolve_external_tool(tool: &'static str) -> io::Result<PathBuf> {
                 }
             }
         }
-        Err(io::Error::new(io::ErrorKind::NotFound, format!("{tool} is unavailable")))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("{tool} is unavailable"),
+        ))
     }
 }
 
 fn is_safe_external_tool_path(path: &Path) -> bool {
-    let Ok(metadata) = std::fs::metadata(path) else { return false };
-    if !metadata.is_file() { return false; }
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let Some(parent) = path.parent().and_then(|p| p.canonicalize().ok()) else { return false };
-        let Ok(parent_metadata) = std::fs::metadata(parent) else { return false };
+        let Some(parent) = path.parent().and_then(|p| p.canonicalize().ok()) else {
+            return false;
+        };
+        let Ok(parent_metadata) = std::fs::metadata(parent) else {
+            return false;
+        };
         let mode = metadata.permissions().mode() | parent_metadata.permissions().mode();
         mode & 0o022 == 0
     }
     #[cfg(not(unix))]
-    { true }
+    {
+        true
+    }
 }
 
 /// Runs an external network tool and returns its stdout.
@@ -169,8 +191,16 @@ pub(crate) fn run_scan_tool(
     // ports are listening" would be a silent lie, so it is an error too.
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let detail = if detail.is_empty() { format!("exited with {}", output.status) } else { detail };
-        return Err(ScanError::new("tool_failed", tool, format!("`{tool}` failed: {detail}")));
+        let detail = if detail.is_empty() {
+            format!("exited with {}", output.status)
+        } else {
+            detail
+        };
+        return Err(ScanError::new(
+            "tool_failed",
+            tool,
+            format!("`{tool}` failed: {detail}"),
+        ));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
@@ -249,7 +279,10 @@ pub struct KillError {
 
 impl KillError {
     pub(crate) fn new(code: &'static str, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 }
 
@@ -283,20 +316,38 @@ pub(crate) fn is_unattributed_pid(pid: u32) -> bool {
     pid == 0
 }
 
-fn validate_kill(pid: u32, ports: &[PortInfo], additional_critical_ports: &[u16]) -> Result<(), KillError> {
+fn validate_kill(
+    pid: u32,
+    ports: &[PortInfo],
+    additional_critical_ports: &[u16],
+) -> Result<(), KillError> {
     if is_reserved_pid(pid) || pid > i32::MAX as u32 {
-        return Err(KillError::new("invalid_pid", "Reserved or invalid process ID"));
+        return Err(KillError::new(
+            "invalid_pid",
+            "Reserved or invalid process ID",
+        ));
     }
     let listeners: Vec<_> = ports.iter().filter(|p| p.pid == pid).collect();
     if listeners.is_empty() {
-        return Err(KillError::new("not_observed", format!("PID {pid} is not a currently observed listening process; rescan and try again")));
+        return Err(KillError::new(
+            "not_observed",
+            format!(
+                "PID {pid} is not a currently observed listening process; rescan and try again"
+            ),
+        ));
     }
     for listener in listeners {
         if is_protected_process_name(&listener.process_name)
             || CRITICAL_PORTS.contains(&listener.port)
             || additional_critical_ports.contains(&listener.port)
         {
-            return Err(KillError::new("critical_process", format!("Protected service {} on :{} cannot be killed", listener.process_name, listener.port)));
+            return Err(KillError::new(
+                "critical_process",
+                format!(
+                    "Protected service {} on :{} cannot be killed",
+                    listener.process_name, listener.port
+                ),
+            ));
         }
     }
     Ok(())
@@ -305,15 +356,22 @@ fn validate_kill(pid: u32, ports: &[PortInfo], additional_critical_ports: &[u16]
 pub fn kill_pid(pid: u32) -> Result<(), KillError> {
     // Reject process-group and reserved IDs before scanning or invoking an OS API.
     if is_reserved_pid(pid) || pid > i32::MAX as u32 {
-        return Err(KillError::new("invalid_pid", "Reserved or invalid process ID"));
+        return Err(KillError::new(
+            "invalid_pid",
+            "Reserved or invalid process ID",
+        ));
     }
     // Claim the process before anything below observes it; see `KillTarget`.
     let target = KillTarget::acquire(pid);
     // A scan that did not run cannot clear a kill: without a port list the
     // critical-process guard has nothing to check against, so fail closed with
     // the real reason instead of the misleading "not observed".
-    let ports = try_scan_ports()
-        .map_err(|e| KillError::new("scan_failed", format!("Cannot verify what PID {pid} is listening on: {e}")))?;
+    let ports = try_scan_ports().map_err(|e| {
+        KillError::new(
+            "scan_failed",
+            format!("Cannot verify what PID {pid} is listening on: {e}"),
+        )
+    })?;
     kill_pid_with(pid, &ports, target)
 }
 
@@ -332,19 +390,35 @@ fn kill_pid_with(pid: u32, ports: &[PortInfo], target: KillTarget) -> Result<(),
     let _ = &target;
     // Host configuration can add protection, never remove the defaults. No
     // override is exposed through the PID-only webview command.
-    let additional = std::env::var("PORTPAL_CRITICAL_PORTS").unwrap_or_default()
-        .split(',').filter_map(|port| port.trim().parse::<u16>().ok()).collect::<Vec<_>>();
+    let additional = std::env::var("PORTPAL_CRITICAL_PORTS")
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|port| port.trim().parse::<u16>().ok())
+        .collect::<Vec<_>>();
     validate_kill(pid, &ports, &additional)?;
     let mut sys = System::new();
     sys.refresh_processes();
-    let process = sys.process(sysinfo::Pid::from(pid as usize))
-        .ok_or_else(|| KillError::new("not_observed", "Process disappeared; rescan and try again"))?;
-    if ports.iter().filter(|p| p.pid == pid).any(|p| p.process_name != process.name()) {
-        return Err(KillError::new("process_changed", "Process identity changed; rescan and try again"));
+    let process = sys
+        .process(sysinfo::Pid::from(pid as usize))
+        .ok_or_else(|| {
+            KillError::new("not_observed", "Process disappeared; rescan and try again")
+        })?;
+    if ports
+        .iter()
+        .filter(|p| p.pid == pid)
+        .any(|p| p.process_name != process.name())
+    {
+        return Err(KillError::new(
+            "process_changed",
+            "Process identity changed; rescan and try again",
+        ));
     }
 
     #[cfg(target_os = "windows")]
-    return target.handle?.stop().map_err(|e| KillError::new("os_error", e));
+    return target
+        .handle?
+        .stop()
+        .map_err(|e| KillError::new("os_error", e));
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     return kill_unix(pid).map_err(|e| KillError::new("os_error", e));
@@ -366,11 +440,17 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortI
     let mut seen_entries: HashSet<(u16, u32)> = HashSet::new();
 
     for line in stdout.lines() {
-        let Some(row) = parse_netstat_tcp_row(line) else { continue };
-        if !row.is_listener() { continue; }
+        let Some(row) = parse_netstat_tcp_row(line) else {
+            continue;
+        };
+        if !row.is_listener() {
+            continue;
+        }
         let (port, pid) = (row.local_port, row.pid);
 
-        if is_unattributed_pid(pid) || seen_entries.contains(&(port, pid)) { continue; }
+        if is_unattributed_pid(pid) || seen_entries.contains(&(port, pid)) {
+            continue;
+        }
         seen_entries.insert((port, pid));
 
         let mut process_name = format!("PID {}", pid);
@@ -397,7 +477,8 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortI
             if project_path.is_none() {
                 if let Some(exe) = process.exe() {
                     if let Some(parent) = exe.parent() {
-                        project_path = find_project_root(parent).map(|p| p.to_string_lossy().to_string());
+                        project_path =
+                            find_project_root(parent).map(|p| p.to_string_lossy().to_string());
                     }
                 }
             }
@@ -410,8 +491,11 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortI
         let project_name = extract_project_name(&project_path);
 
         ports.push(PortInfo {
-            port, pid, process_name,
-            project_path, project_name,
+            port,
+            pid,
+            process_name,
+            project_path,
+            project_name,
             protocol: "TCP".into(),
             start_cmd,
         });
@@ -445,7 +529,9 @@ impl KillTarget {
         // the user to elevate and retry a kill the policy refuses outright. It
         // surfaces only after `validate_kill` has had its say, and nothing is
         // terminated in between.
-        return Self { handle: ProcessHandle::open(pid) };
+        return Self {
+            handle: ProcessHandle::open(pid),
+        };
 
         #[cfg(not(target_os = "windows"))]
         {
@@ -498,17 +584,19 @@ impl ProcessHandle {
             let error = io::Error::last_os_error();
             // Access denied is a different user problem from a vanished process:
             // one means "run PortPal elevated", the other means "rescan".
-            return Err(if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) {
-                KillError::new(
+            return Err(
+                if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) {
+                    KillError::new(
                     "access_denied",
                     format!("PID {pid} cannot be stopped by this user. Run PortPal as administrator to manage it."),
                 )
-            } else {
-                KillError::new(
-                    "not_observed",
-                    format!("PID {pid} is no longer running; rescan and try again"),
-                )
-            });
+                } else {
+                    KillError::new(
+                        "not_observed",
+                        format!("PID {pid} is no longer running; rescan and try again"),
+                    )
+                },
+            );
         }
         Ok(Self { handle, pid })
     }
@@ -538,7 +626,9 @@ impl ProcessHandle {
     /// Posts WM_CLOSE through `taskkill` (no `/F`). True when Windows accepted
     /// it, which also means there was a window to accept it.
     fn request_close(&self) -> bool {
-        let Ok(executable) = resolve_external_tool("taskkill") else { return false };
+        let Ok(executable) = resolve_external_tool("taskkill") else {
+            return false;
+        };
         Command::new(executable)
             .args(["/PID", &self.pid.to_string()])
             .output()
@@ -605,7 +695,9 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo
 
     for line in stdout.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 9 { continue; }
+        if parts.len() < 9 {
+            continue;
+        }
 
         let mut process_name = parts[0].to_string();
         let pid: u32 = match parts[1].parse() {
@@ -627,7 +719,9 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo
         // only because it names no process. A PID 1 listener (systemd socket
         // activation) is a real bound port and stays visible; the kill guards
         // refuse it, they do not hide it.
-        if is_unattributed_pid(pid) || seen_entries.contains(&(port, pid)) { continue; }
+        if is_unattributed_pid(pid) || seen_entries.contains(&(port, pid)) {
+            continue;
+        }
         seen_entries.insert((port, pid));
 
         let mut project_path = None;
@@ -635,7 +729,9 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo
 
         if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
             let sys_name = process.name().to_string();
-            if !sys_name.is_empty() { process_name = sys_name; }
+            if !sys_name.is_empty() {
+                process_name = sys_name;
+            }
 
             if let Some(cwd) = process.cwd() {
                 project_path = find_project_root(cwd).map(|p| p.to_string_lossy().to_string());
@@ -659,7 +755,9 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo
         }
 
         ports.push(PortInfo {
-            port, pid, process_name,
+            port,
+            pid,
+            process_name,
             project_path,
             // Derived from project_path once the batch below has had its say.
             project_name: None,
@@ -720,11 +818,16 @@ fn resolve_cwds(pids: &[u32]) -> HashMap<u32, PathBuf> {
     #[cfg(target_os = "macos")]
     {
         // `-p` takes a comma-separated set, so the whole scan is one spawn.
-        let list = pids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
-        match resolve_external_tool("lsof").and_then(|executable| Command::new(executable)
-            .args(["-p", &list, "-a", "-d", "cwd", "-Fpn"])
-            .output())
-        {
+        let list = pids
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        match resolve_external_tool("lsof").and_then(|executable| {
+            Command::new(executable)
+                .args(["-p", &list, "-a", "-d", "cwd", "-Fpn"])
+                .output()
+        }) {
             // A non-zero exit still prints the pids it could read, and lsof
             // exits non-zero whenever any pid was unreadable, so stdout is
             // parsed either way rather than discarded.
@@ -812,8 +915,10 @@ fn process_has_exited(sys: &mut System, pid: u32) -> bool {
 fn kill_unix(pid: u32) -> Result<(), String> {
     let mut sys = System::new();
     sys.refresh_processes();
-    let identity = sys.process(sysinfo::Pid::from(pid as usize))
-        .map(|p| p.start_time()).ok_or_else(|| "Process disappeared".to_string())?;
+    let identity = sys
+        .process(sysinfo::Pid::from(pid as usize))
+        .map(|p| p.start_time())
+        .ok_or_else(|| "Process disappeared".to_string())?;
     if unsafe { libc::kill(pid as i32, libc::SIGTERM) } != 0 {
         return Err(std::io::Error::last_os_error().to_string());
     }
@@ -824,7 +929,11 @@ fn kill_unix(pid: u32) -> Result<(), String> {
     if !exited {
         // Never send the delayed SIGKILL to a process that reused the PID.
         sys.refresh_processes();
-        if sys.process(sysinfo::Pid::from(pid as usize)).map(|p| p.start_time()) != Some(identity) {
+        if sys
+            .process(sysinfo::Pid::from(pid as usize))
+            .map(|p| p.start_time())
+            != Some(identity)
+        {
             return Err("Process identity changed before SIGKILL".into());
         }
         if unsafe { libc::kill(pid as i32, libc::SIGKILL) } != 0 {
@@ -910,9 +1019,14 @@ fn find_project_root(start: &std::path::Path) -> Option<std::path::PathBuf> {
 
 fn find_project_root_uncached(start: &std::path::Path) -> Option<std::path::PathBuf> {
     let markers = [
-        "package.json", "Cargo.toml", "go.mod",
-        "pyproject.toml", "requirements.txt",
-        "pom.xml", "build.gradle", ".git",
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
+        "pyproject.toml",
+        "requirements.txt",
+        "pom.xml",
+        "build.gradle",
+        ".git",
     ];
     let mut dir = start.to_path_buf();
     for _ in 0..6 {
@@ -921,7 +1035,9 @@ fn find_project_root_uncached(start: &std::path::Path) -> Option<std::path::Path
                 return Some(dir);
             }
         }
-        if !dir.pop() { break; }
+        if !dir.pop() {
+            break;
+        }
     }
     None
 }
@@ -969,7 +1085,8 @@ fn trusted_launches() -> &'static Mutex<TrustedLaunches> {
 type SpawnedChildren = HashMap<(u16, u32), Child>;
 
 fn spawned_children() -> &'static Mutex<SpawnedChildren> {
-    static CHILDREN: LazyLock<Mutex<SpawnedChildren>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+    static CHILDREN: LazyLock<Mutex<SpawnedChildren>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
     &CHILDREN
 }
 
@@ -1002,8 +1119,8 @@ const ALLOWED_PROGRAMS: &[&str] = &[
 /// Anything a shell could interpret. We never invoke a shell, but rejecting
 /// these keeps the door shut if a future caller ever does.
 const FORBIDDEN_CHARS: &[char] = &[
-    '&', '|', ';', '$', '`', '(', ')', '<', '>', '"', '\'', '*', '?', '~', '#', '%', '!', '{',
-    '}', '[', ']', '^', '\n', '\r', '\t',
+    '&', '|', ';', '$', '`', '(', ')', '<', '>', '"', '\'', '*', '?', '~', '#', '%', '!', '{', '}',
+    '[', ']', '^', '\n', '\r', '\t',
 ];
 
 /// Rejects a token that a shell (or a path walker) could reinterpret.
@@ -1011,7 +1128,10 @@ pub fn reject_unsafe_token(token: &str, kind: &str) -> Result<(), String> {
     if token.is_empty() {
         return Err(format!("empty {}", kind));
     }
-    if let Some(bad) = token.chars().find(|c| FORBIDDEN_CHARS.contains(c) || c.is_control()) {
+    if let Some(bad) = token
+        .chars()
+        .find(|c| FORBIDDEN_CHARS.contains(c) || c.is_control())
+    {
         return Err(format!("{} contains an unsafe character {:?}", kind, bad));
     }
     if token.split(['/', '\\']).any(|part| part == "..") {
@@ -1122,7 +1242,10 @@ pub fn validate_launch_record(record: &LaunchRecord) -> Result<(), String> {
     } else if Path::new(&record.program).components().count() != 1 {
         return Err("relative program paths are not allowed".into());
     } else if !program_basename_allowed(&record.program) {
-        return Err(format!("program {:?} is not an allowed interpreter", record.program));
+        return Err(format!(
+            "program {:?} is not an allowed interpreter",
+            record.program
+        ));
     }
 
     Ok(())
@@ -1131,11 +1254,29 @@ pub fn validate_launch_record(record: &LaunchRecord) -> Result<(), String> {
 /// Project-local programs must obey the same no-shell rule as global ones.
 /// Rust implicitly invokes cmd.exe for Windows batch files, even with args().
 fn reject_shell_launcher(program: &Path) -> Result<(), String> {
-    let name = program.file_name().and_then(|name| name.to_str())
-        .unwrap_or_default().to_ascii_lowercase();
+    let name = program
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     let stem = name.strip_suffix(".exe").unwrap_or(&name);
-    if [".cmd", ".bat", ".ps1"].iter().any(|ext| name.ends_with(ext))
-        || ["cmd", "powershell", "pwsh", "sh", "bash", "dash", "zsh", "fish", "ksh", "csh", "tcsh"].contains(&stem)
+    if [".cmd", ".bat", ".ps1"]
+        .iter()
+        .any(|ext| name.ends_with(ext))
+        || [
+            "cmd",
+            "powershell",
+            "pwsh",
+            "sh",
+            "bash",
+            "dash",
+            "zsh",
+            "fish",
+            "ksh",
+            "csh",
+            "tcsh",
+        ]
+        .contains(&stem)
     {
         return Err("shell launchers cannot be restarted; use the native server executable".into());
     }
@@ -1156,7 +1297,12 @@ fn build_launch_record(cmd: &[String], cwd: Option<&Path>) -> Option<LaunchRecor
     let root = std::fs::canonicalize(find_project_root(cwd)?).ok()?;
     let cwd = canonicalize_jailed(cwd, &root).ok()?;
 
-    let record = LaunchRecord { program, args, cwd, root };
+    let record = LaunchRecord {
+        program,
+        args,
+        cwd,
+        root,
+    };
     validate_launch_record(&record).ok()?;
     Some(record)
 }
@@ -1200,7 +1346,10 @@ pub fn restart_trusted(port: u16, pid: u32) -> Result<(), String> {
         .get(&(port, pid))
         .cloned()
         .ok_or_else(|| {
-            format!("no trusted launch record for port {} (pid {}); rescan and try again", port, pid)
+            format!(
+                "no trusted launch record for port {} (pid {}); rescan and try again",
+                port, pid
+            )
         })?;
 
     // The store may have been recorded seconds or hours ago; re-check it
@@ -1294,8 +1443,15 @@ mod tests {
     use tempfile::tempdir;
 
     fn listener(pid: u32, port: u16, name: &str) -> PortInfo {
-        PortInfo { pid, port, process_name: name.into(), project_path: None,
-            project_name: None, protocol: "TCP".into(), start_cmd: None }
+        PortInfo {
+            pid,
+            port,
+            process_name: name.into(),
+            project_path: None,
+            project_name: None,
+            protocol: "TCP".into(),
+            start_cmd: None,
+        }
     }
 
     #[test]
@@ -1304,7 +1460,11 @@ mod tests {
         // even when the process was already gone.
         let started = Instant::now();
         assert!(wait_until(Duration::from_secs(30), || true));
-        assert!(started.elapsed() < Duration::from_millis(100), "waited {:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_millis(100),
+            "waited {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
@@ -1313,7 +1473,11 @@ mod tests {
         let started = Instant::now();
         // Finishes far short of the timeout, so the call must too.
         assert!(wait_until(Duration::from_secs(30), || Instant::now() >= deadline));
-        assert!(started.elapsed() < Duration::from_secs(1), "waited {:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "waited {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
@@ -1322,20 +1486,33 @@ mod tests {
         assert!(!wait_until(Duration::from_millis(100), || false));
         // It waited the budget rather than returning early or hanging.
         assert!(started.elapsed() >= Duration::from_millis(100));
-        assert!(started.elapsed() < Duration::from_secs(5), "waited {:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "waited {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
     fn missing_tool_is_a_typed_error_not_a_panic() {
         // The historical bug: a missing binary panicked and took down the app
         // and the tray thread. It must now be a recoverable, typed error.
-        let error = run_scan_tool("portpal-no-such-tool-exists", &[], "list listening ports").unwrap_err();
+        let error =
+            run_scan_tool("portpal-no-such-tool-exists", &[], "list listening ports").unwrap_err();
         assert_eq!(error.code, "tool_missing");
         assert_eq!(error.tool, "portpal-no-such-tool-exists");
-        assert!(error.message.contains("not found on PATH"), "{}", error.message);
+        assert!(
+            error.message.contains("not found on PATH"),
+            "{}",
+            error.message
+        );
         // The message names the capability that breaks, not "port scanning"
         // for every tool: on Linux the connection reader is a different binary.
-        assert!(error.message.contains("list listening ports"), "{}", error.message);
+        assert!(
+            error.message.contains("list listening ports"),
+            "{}",
+            error.message
+        );
     }
 
     #[test]
@@ -1402,7 +1579,9 @@ mod tests {
         #[cfg(not(target_os = "windows"))]
         let (tool, args): (&str, &[&str]) = ("sh", &["-c", "echo portpal"]);
 
-        assert!(run_scan_tool(tool, args, "list listening ports").unwrap().contains("portpal"));
+        assert!(run_scan_tool(tool, args, "list listening ports")
+            .unwrap()
+            .contains("portpal"));
     }
 
     // ─── Windows kill path ───────────────────────────────────────────────
@@ -1466,7 +1645,10 @@ mod tests {
         let elapsed = started.elapsed();
 
         // Gone, by the kernel's account rather than by a PID lookup.
-        assert!(handle.wait_for_exit(Duration::ZERO), "child outlived stop()");
+        assert!(
+            handle.wait_for_exit(Duration::ZERO),
+            "child outlived stop()"
+        );
         // Whichever branch ran — WM_CLOSE accepted and honoured, or straight to
         // force because there was no window — the caller is not billed the full
         // grace period for a process that is already gone.
@@ -1521,7 +1703,10 @@ mod tests {
 
         // Still openable, still the same dead process, because `pinning` lives.
         let second = ProcessHandle::open(pid).expect("pid was released while a handle was open");
-        assert!(second.wait_for_exit(Duration::ZERO), "pid now names a live process");
+        assert!(
+            second.wait_for_exit(Duration::ZERO),
+            "pid now names a live process"
+        );
     }
 
     #[cfg(target_os = "windows")]
@@ -1535,7 +1720,9 @@ mod tests {
         handle.terminate().expect("first terminate");
         assert!(handle.wait_for_exit(Duration::from_secs(5)));
 
-        handle.terminate().expect("terminating an exited process is success");
+        handle
+            .terminate()
+            .expect("terminating an exited process is success");
         let _ = child.wait();
     }
 
@@ -1558,9 +1745,17 @@ mod tests {
     #[test]
     fn kill_policy_rejects_unknown_and_reserved_pids() {
         for pid in [0, 1, u32::MAX, i32::MAX as u32 + 1] {
-            assert_eq!(validate_kill(pid, &[listener(pid, 3000, "node")], &[]).unwrap_err().code, "invalid_pid");
+            assert_eq!(
+                validate_kill(pid, &[listener(pid, 3000, "node")], &[])
+                    .unwrap_err()
+                    .code,
+                "invalid_pid"
+            );
         }
-        assert_eq!(validate_kill(42, &[], &[]).unwrap_err().code, "not_observed");
+        assert_eq!(
+            validate_kill(42, &[], &[]).unwrap_err().code,
+            "not_observed"
+        );
         assert_eq!(kill_pid(0).unwrap_err().code, "invalid_pid");
         assert_eq!(kill_pid(1).unwrap_err().code, "invalid_pid");
         assert_eq!(kill_pid(u32::MAX).unwrap_err().code, "invalid_pid");
@@ -1568,11 +1763,27 @@ mod tests {
 
     #[test]
     fn kill_policy_rejects_critical_names_and_any_protected_listener() {
-        for name in ["system", "SVCHOST.EXE", "lsass", "Postgres", "redis-server", "mysqld.exe", "mongod"] {
-            assert_eq!(validate_kill(42, &[listener(42, 3000, name)], &[]).unwrap_err().code, "critical_process");
+        for name in [
+            "system",
+            "SVCHOST.EXE",
+            "lsass",
+            "Postgres",
+            "redis-server",
+            "mysqld.exe",
+            "mongod",
+        ] {
+            assert_eq!(
+                validate_kill(42, &[listener(42, 3000, name)], &[])
+                    .unwrap_err()
+                    .code,
+                "critical_process"
+            );
         }
         let ports = [listener(42, 3000, "node"), listener(42, 5432, "node")];
-        assert_eq!(validate_kill(42, &ports, &[]).unwrap_err().code, "critical_process");
+        assert_eq!(
+            validate_kill(42, &ports, &[]).unwrap_err().code,
+            "critical_process"
+        );
         assert!(validate_kill(42, &[listener(42, 9000, "node")], &[9000]).is_err());
         assert!(validate_kill(42, &[listener(42, 3000, "node")], &[]).is_ok());
     }
@@ -1667,7 +1878,9 @@ mod tests {
 
     #[test]
     fn parse_lsof_without_listen_suffix() {
-        let parts: Vec<&str> = "node 1234 user 10u IPv4 0x... 0t0 TCP *:3000".split_whitespace().collect();
+        let parts: Vec<&str> = "node 1234 user 10u IPv4 0x... 0t0 TCP *:3000"
+            .split_whitespace()
+            .collect();
         assert_eq!(parse_lsof_name_parts(&parts), Some(3000));
     }
 
@@ -1743,7 +1956,10 @@ mod tests {
     fn a_pid_one_listener_is_listed_but_not_killable() {
         // The visible-but-protected contract for socket-activated listeners:
         // the scanners keep the row, and the kill guard is what refuses it.
-        assert!(!is_unattributed_pid(1), "a PID 1 listener must not be filtered out of the listing");
+        assert!(
+            !is_unattributed_pid(1),
+            "a PID 1 listener must not be filtered out of the listing"
+        );
         let error = validate_kill(1, &[listener(1, 8080, "systemd")], &[]).unwrap_err();
         assert_eq!(error.code, "invalid_pid");
     }
@@ -1818,8 +2034,19 @@ mod tests {
 
     #[test]
     fn reject_unsafe_token_allows_ordinary_arguments() {
-        for token in ["run", "dev", "--port=5173", "src/index.js", "C:\\bin\\node.exe", "-m"] {
-            assert!(reject_unsafe_token(token, "argument").is_ok(), "{:?}", token);
+        for token in [
+            "run",
+            "dev",
+            "--port=5173",
+            "src/index.js",
+            "C:\\bin\\node.exe",
+            "-m",
+        ] {
+            assert!(
+                reject_unsafe_token(token, "argument").is_ok(),
+                "{:?}",
+                token
+            );
         }
     }
 
@@ -1827,7 +2054,9 @@ mod tests {
     fn program_basename_allowlist() {
         assert!(program_basename_allowed("npm"));
         assert!(program_basename_allowed("node"));
-        assert!(program_basename_allowed("C:\\Program Files\\nodejs\\node.exe"));
+        assert!(program_basename_allowed(
+            "C:\\Program Files\\nodejs\\node.exe"
+        ));
         assert!(program_basename_allowed("/usr/local/bin/python3"));
         // Shell-interpreted launchers and anything off the list stay out.
         assert!(!program_basename_allowed("npm.cmd"));
@@ -1891,7 +2120,16 @@ mod tests {
     fn validate_rejects_shell_launchers_inside_the_project() {
         let dir = tempdir().unwrap();
         let root = project(&dir);
-        for name in ["start.cmd", "start.BAT", "script.ps1", "cmd.exe", "powershell.exe", "pwsh.exe", "sh", "bash"] {
+        for name in [
+            "start.cmd",
+            "start.BAT",
+            "script.ps1",
+            "cmd.exe",
+            "powershell.exe",
+            "pwsh.exe",
+            "sh",
+            "bash",
+        ] {
             let binary = dir.path().join(name);
             fs::write(&binary, "").unwrap();
             let rec = record(&root, binary.to_str().unwrap(), &["ordinary argument"]);
@@ -1904,33 +2142,60 @@ mod tests {
         let dir = tempdir().unwrap();
         let root = project(&dir);
         let source = dir.path().join("probe.rs");
-        let binary = dir.path().join(format!("argument probe{}", std::env::consts::EXE_SUFFIX));
+        let binary = dir
+            .path()
+            .join(format!("argument probe{}", std::env::consts::EXE_SUFFIX));
         // A native child reports exactly what it received, without a shell or
         // another language runtime interpreting its command line.
-        fs::write(&source, r#"
+        fs::write(
+            &source,
+            r#"
             fn main() {
                 let args: Vec<String> = std::env::args().skip(1).collect();
                 std::fs::write("received.txt", format!("{:?}", args)).unwrap();
             }
-        "#).unwrap();
-        assert!(Command::new("rustc").arg(&source).arg("-o").arg(&binary)
-            .status().unwrap().success());
+        "#,
+        )
+        .unwrap();
+        assert!(Command::new("rustc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&binary)
+            .status()
+            .unwrap()
+            .success());
         let args = ["ordinary", "path with spaces", "trailing\\", "two  spaces"];
         let cmd = std::iter::once(binary.to_str().unwrap().to_string())
-            .chain(args.iter().map(|arg| arg.to_string())).collect::<Vec<_>>();
+            .chain(args.iter().map(|arg| arg.to_string()))
+            .collect::<Vec<_>>();
         let mut rec = build_launch_record(&cmd, Some(&root)).unwrap();
         assert_eq!(rec.args, args);
         // Exercise the spawn sink with punctuation as well: even if validation
         // changes later, these must remain literal arguments, never shell code.
-        rec.args.extend(["& echo injected > injected.txt", "a|b", "a^b", "a\"b", "", "%PATH%"]
-            .iter().map(|arg| arg.to_string()));
+        rec.args.extend(
+            [
+                "& echo injected > injected.txt",
+                "a|b",
+                "a^b",
+                "a\"b",
+                "",
+                "%PATH%",
+            ]
+            .iter()
+            .map(|arg| arg.to_string()),
+        );
         spawn_trusted(&rec).unwrap();
         let output = root.join("received.txt");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let expected = format!("{:?}", rec.args);
         loop {
-            if fs::read_to_string(&output).ok().as_deref() == Some(&expected) { break; }
-            assert!(std::time::Instant::now() < deadline, "child did not report exact argv");
+            if fs::read_to_string(&output).ok().as_deref() == Some(&expected) {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "child did not report exact argv"
+            );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         assert!(!root.join("injected.txt").exists());
@@ -1986,7 +2251,10 @@ mod tests {
     fn build_launch_record_captures_a_vetted_dev_server() {
         let dir = tempdir().unwrap();
         let root = project(&dir);
-        let cmd: Vec<String> = ["npm", "run", "dev"].iter().map(|s| s.to_string()).collect();
+        let cmd: Vec<String> = ["npm", "run", "dev"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let rec = build_launch_record(&cmd, Some(&root)).expect("record");
         assert_eq!(rec.program, "npm");
         assert_eq!(rec.args, vec!["run".to_string(), "dev".to_string()]);
@@ -2035,36 +2303,51 @@ mod tests {
     fn parses_a_batched_lsof_cwd_listing() {
         // One spawn now covers every pid, so the parser has to keep each
         // path with the process block it appeared under.
-        let out = parse_lsof_cwd_records("p501
+        let out = parse_lsof_cwd_records(
+            "p501
 n/Users/me/projects/api
 p777
 n/Users/me/projects/web
-");
+",
+        );
         assert_eq!(out.len(), 2);
-        assert_eq!(out.get(&501), Some(&PathBuf::from("/Users/me/projects/api")));
-        assert_eq!(out.get(&777), Some(&PathBuf::from("/Users/me/projects/web")));
+        assert_eq!(
+            out.get(&501),
+            Some(&PathBuf::from("/Users/me/projects/api"))
+        );
+        assert_eq!(
+            out.get(&777),
+            Some(&PathBuf::from("/Users/me/projects/web"))
+        );
     }
 
     #[test]
     fn keeps_paths_that_contain_spaces() {
         // `-F` output is one field per line, so a space is part of the path
         // and must not be tokenized away.
-        let out = parse_lsof_cwd_records("p42
+        let out = parse_lsof_cwd_records(
+            "p42
 n/Users/me/My Project/server
-");
-        assert_eq!(out.get(&42), Some(&PathBuf::from("/Users/me/My Project/server")));
+",
+        );
+        assert_eq!(
+            out.get(&42),
+            Some(&PathBuf::from("/Users/me/My Project/server"))
+        );
     }
 
     #[test]
     fn omits_a_process_whose_cwd_was_not_reported() {
         // lsof prints the process block but no `n` line for a directory it
         // could not read; that pid simply gets no project attributed.
-        let out = parse_lsof_cwd_records("p501
+        let out = parse_lsof_cwd_records(
+            "p501
 n/Users/me/a
 p502
 p503
 n/Users/me/c
-");
+",
+        );
         assert_eq!(out.len(), 2);
         assert_eq!(out.get(&501), Some(&PathBuf::from("/Users/me/a")));
         assert_eq!(out.get(&502), None);
@@ -2073,28 +2356,37 @@ n/Users/me/c
 
     #[test]
     fn an_unreadable_pid_line_does_not_misattribute_the_path_below_it() {
-        let out = parse_lsof_cwd_records("p501
+        let out = parse_lsof_cwd_records(
+            "p501
 n/Users/me/a
 pBOGUS
 n/Users/me/orphan
-");
+",
+        );
         assert_eq!(out.get(&501), Some(&PathBuf::from("/Users/me/a")));
-        assert_eq!(out.len(), 1, "orphaned path was attributed to a process: {out:?}");
+        assert_eq!(
+            out.len(),
+            1,
+            "orphaned path was attributed to a process: {out:?}"
+        );
     }
 
     #[test]
     fn ignores_empty_input_and_unrelated_field_lines() {
         assert!(parse_lsof_cwd_records("").is_empty());
-        assert!(parse_lsof_cwd_records("
+        assert!(parse_lsof_cwd_records(
+            "
 
-").is_empty());
+"
+        )
+        .is_empty());
         // A bare `n` with no path, and fields we did not ask for.
-        assert!(parse_lsof_cwd_records("p501
+        assert!(parse_lsof_cwd_records(
+            "p501
 fcwd
 n
-").is_empty());
+"
+        )
+        .is_empty());
     }
-
 }
-
-

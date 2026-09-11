@@ -13,7 +13,11 @@ export default defineConfig({
     globals: true,
     root: here,
     setupFiles: [here + 'src/test/setup.ts'],
-    include: ['src/**/*.{test,spec}.{ts,tsx}', 'dev/**/*.{test,spec}.ts', 'src-tauri/**/*.{test,spec}.{ts,ts}'],
+    include: [
+      'src/**/*.{test,spec}.{ts,tsx}',
+      'dev/**/*.{test,spec}.ts',
+      'src-tauri/**/*.{test,spec}.{ts,ts}',
+    ],
     exclude: ['node_modules', 'dist', 'src-tauri/target'],
     coverage: {
       provider: 'v8',

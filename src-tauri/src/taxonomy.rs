@@ -47,12 +47,24 @@ pub fn is_protected_process_name(process_name: &str) -> bool {
 /// and the tray (liveness icon and tooltip count), so those surfaces can
 /// never diverge into per-surface port lists.
 pub const DEV_PORTS: &[(u16, &str)] = &[
-    (3000, "React"), (3001, "React"), (4000, "Node"),
-    (4200, "Angular"), (5173, "Vite"), (5174, "Vite"),
-    (8000, "Django"), (8080, "HTTP"), (8888, "Jupyter"),
-    (5432, "Postgres"), (3306, "MySQL"), (6379, "Redis"),
-    (27017, "Mongo"), (9000, "PHP"), (1420, "Tauri"),
-    (4173, "Vite"), (2000, "Node"), (8443, "HTTPS"),
+    (3000, "React"),
+    (3001, "React"),
+    (4000, "Node"),
+    (4200, "Angular"),
+    (5173, "Vite"),
+    (5174, "Vite"),
+    (8000, "Django"),
+    (8080, "HTTP"),
+    (8888, "Jupyter"),
+    (5432, "Postgres"),
+    (3306, "MySQL"),
+    (6379, "Redis"),
+    (27017, "Mongo"),
+    (9000, "PHP"),
+    (1420, "Tauri"),
+    (4173, "Vite"),
+    (2000, "Node"),
+    (8443, "HTTPS"),
 ];
 
 /// Backend dev-port set for tray/liveness surfaces, so icon, tooltip, and
@@ -111,7 +123,11 @@ mod tests {
     #[test]
     fn dev_ports_match_shared_fixture() {
         let theirs = fixture().dev_ports;
-        assert_eq!(DEV_PORTS.len(), theirs.len(), "dev table drifted from fixture");
+        assert_eq!(
+            DEV_PORTS.len(),
+            theirs.len(),
+            "dev table drifted from fixture"
+        );
         for ((port, framework), entry) in DEV_PORTS.iter().zip(theirs.iter()) {
             assert_eq!(*port, entry.port);
             assert_eq!(*framework, entry.framework);

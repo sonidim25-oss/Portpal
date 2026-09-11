@@ -1,7 +1,15 @@
 {
   "_comment": "Single source of truth for PortPal's port taxonomy and kill policy. Both the Rust backend (src-tauri/src/taxonomy.rs) and the TypeScript frontend (src/app/taxonomy.ts) assert set equality against this file in their test suites, so adding a protected service means editing HERE plus the two language tables — and a missed edit fails tests instead of silently weakening the kill guard.",
   "criticalPorts": [22, 80, 443, 3306, 5432, 6379, 27017],
-  "criticalProcessNames": ["system", "svchost", "lsass", "postgres", "redis-server", "mysqld", "mongod"],
+  "criticalProcessNames": [
+    "system",
+    "svchost",
+    "lsass",
+    "postgres",
+    "redis-server",
+    "mysqld",
+    "mongod"
+  ],
   "devPorts": [
     { "port": 3000, "framework": "React" },
     { "port": 3001, "framework": "React" },

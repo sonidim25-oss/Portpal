@@ -18,7 +18,10 @@ export interface PortEvent {
   timestamp: number;
 }
 
-export interface TrafficSample { connections: number; timestamp: number }
+export interface TrafficSample {
+  connections: number;
+  timestamp: number;
+}
 export type TrafficByPort = Record<number, TrafficSample[]>;
 export type NavPage = 'dashboard' | 'ports' | 'traffic' | 'services' | 'logs' | 'settings';
 export type PortFilter = 'all' | 'dev' | 'system' | 'other';

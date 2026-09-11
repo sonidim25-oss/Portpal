@@ -1,17 +1,17 @@
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
-import { PortInspector } from "./PortInspector";
-import type { PortInfo, TrafficSample } from "../../app/types";
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import { PortInspector } from './PortInspector';
+import type { PortInfo, TrafficSample } from '../../app/types';
 
 const port: PortInfo = {
   port: 3000,
   pid: 18344,
-  process_name: "node.exe",
-  project_name: "PortPal",
-  project_path: "C:\\work\\PortPal",
-  protocol: "TCP",
-  start_cmd: "npm run dev",
+  process_name: 'node.exe',
+  project_name: 'PortPal',
+  project_path: 'C:\\work\\PortPal',
+  protocol: 'TCP',
+  start_cmd: 'npm run dev',
 };
 
 const traffic: TrafficSample[] = [
@@ -43,57 +43,59 @@ function renderInspector(overrides: Partial<React.ComponentProps<typeof PortInsp
   return { onClose, onKill, onRestart };
 }
 
-describe("PortInspector", () => {
-  it("closes from its close control and Escape", async () => {
+describe('PortInspector', () => {
+  it('closes from its close control and Escape', async () => {
     const user = userEvent.setup();
     const { onClose } = renderInspector();
 
-    await user.click(screen.getByRole("button", { name: "Close inspector" }));
+    await user.click(screen.getByRole('button', { name: 'Close inspector' }));
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    await user.keyboard("{Escape}");
+    await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  it("shows real details with definition-list semantics and sends kill requests for the selected port", async () => {
+  it('shows real details with definition-list semantics and sends kill requests for the selected port', async () => {
     const user = userEvent.setup();
     const { onKill } = renderInspector();
 
-    expect(screen.getByRole("complementary", { name: "Port inspector for :3000" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Overview" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Project" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Process" })).toBeVisible();
-    expect(document.querySelectorAll("dl")).toHaveLength(3);
-    expect(document.querySelectorAll("dt")).toHaveLength(9);
-    expect(document.querySelectorAll("dd")).toHaveLength(9);
-    expect(screen.getByText("Observed 2m ago")).toBeVisible();
-    expect(screen.queryByRole("button", { name: /Close Connections/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Open.*Path|Open.*Folder|Terminal/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Port inspector for :3000' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Overview' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Project' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Process' })).toBeVisible();
+    expect(document.querySelectorAll('dl')).toHaveLength(3);
+    expect(document.querySelectorAll('dt')).toHaveLength(9);
+    expect(document.querySelectorAll('dd')).toHaveLength(9);
+    expect(screen.getByText('Observed 2m ago')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Close Connections/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Open.*Path|Open.*Folder|Terminal/i }),
+    ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Kill Process" }));
+    await user.click(screen.getByRole('button', { name: 'Kill Process' }));
     expect(onKill).toHaveBeenCalledWith(port);
   });
 
-  it("shows Restart only for killed, restartable ports and disables it while pending", () => {
+  it('shows Restart only for killed, restartable ports and disables it while pending', () => {
     const { onRestart } = renderInspector({
       killed: true,
       restarting: new Set([port.pid]),
     });
 
-    expect(screen.queryByRole("button", { name: "Kill Process" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Restart Process" })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Kill Process' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Restart Process' })).toBeDisabled();
     expect(onRestart).not.toHaveBeenCalled();
   });
 
-  it("sends restart requests for a killed, restartable port", async () => {
+  it('sends restart requests for a killed, restartable port', async () => {
     const user = userEvent.setup();
     const { onRestart } = renderInspector({ killed: true });
 
-    await user.click(screen.getByRole("button", { name: "Restart Process" }));
+    await user.click(screen.getByRole('button', { name: 'Restart Process' }));
     expect(onRestart).toHaveBeenCalledWith(port);
   });
 
-  it("disables the process action while killing or restarting is pending", () => {
+  it('disables the process action while killing or restarting is pending', () => {
     const { rerender } = render(
       <PortInspector
         port={port}
@@ -109,7 +111,7 @@ describe("PortInspector", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Kill Process" })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Kill Process' })).toBeDisabled();
 
     rerender(
       <PortInspector
@@ -126,6 +128,6 @@ describe("PortInspector", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Kill Process" })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Kill Process' })).toBeDisabled();
   });
 });

@@ -36,12 +36,17 @@ struct PortTraffic {
 
 impl PortTraffic {
     fn new() -> Self {
-        Self { samples: VecDeque::new() }
+        Self {
+            samples: VecDeque::new(),
+        }
     }
 
     fn push(&mut self, conns: usize) {
         let ts = now_millis();
-        self.samples.push_back(TrafficSample { connections: conns, timestamp: ts });
+        self.samples.push_back(TrafficSample {
+            connections: conns,
+            timestamp: ts,
+        });
         // Keep last 30 samples (~60 seconds at 2s interval)
         if self.samples.len() > 30 {
             // pop_front rotates a bounded queue in O(1); Vec::remove(0) shifts it.
@@ -89,11 +94,18 @@ impl PortLogger {
         let mut new_events = Vec::new();
 
         // Build current endpoint set keyed by (port, pid)
-        let mut current: HashMap<EndpointKey, (String, Option<String>, Option<String>)> = HashMap::new();
+        let mut current: HashMap<EndpointKey, (String, Option<String>, Option<String>)> =
+            HashMap::new();
         let mut port_to_endpoints: HashMap<u16, Vec<(String, Option<String>)>> = HashMap::new();
         for (port, pid, name, fw, project_path) in ports {
-            current.insert((*port, *pid), (name.clone(), fw.clone(), project_path.clone()));
-            port_to_endpoints.entry(*port).or_default().push((name.clone(), project_path.clone()));
+            current.insert(
+                (*port, *pid),
+                (name.clone(), fw.clone(), project_path.clone()),
+            );
+            port_to_endpoints
+                .entry(*port)
+                .or_default()
+                .push((name.clone(), project_path.clone()));
         }
 
         // Detect new endpoints (started) — PID rotation on the same port is a
@@ -139,9 +151,16 @@ impl PortLogger {
                 new_conflicts.insert(*port);
                 if !self.conflicts.contains(port) {
                     // One conflict event per port (pid = lowest for stability)
-                    let pid = current.keys().filter(|(p, _)| p == port).map(|(_, pid)| *pid).min().unwrap_or(0);
-                    let name = current.get(&(*port, pid))
-                        .map(|(n, _, _)| n.clone()).unwrap_or_default();
+                    let pid = current
+                        .keys()
+                        .filter(|(p, _)| p == port)
+                        .map(|(_, pid)| *pid)
+                        .min()
+                        .unwrap_or(0);
+                    let name = current
+                        .get(&(*port, pid))
+                        .map(|(n, _, _)| n.clone())
+                        .unwrap_or_default();
                     let event = PortEvent {
                         port: *port,
                         pid,
@@ -164,7 +183,10 @@ impl PortLogger {
             // worker turnover and no endpoint reports zero while the port is busy.
             // (Single-listener ports — the common case — are exact.)
             let conns = conn_counts.get(&key.0).copied().unwrap_or(0);
-            self.traffic.entry(*key).or_insert_with(PortTraffic::new).push(conns);
+            self.traffic
+                .entry(*key)
+                .or_insert_with(PortTraffic::new)
+                .push(conns);
         }
 
         // Purge state for stopped endpoints so long sessions cannot leak keys
@@ -235,7 +257,10 @@ impl PortLogger {
         merged
             .into_iter()
             .skip(skip)
-            .map(|(timestamp, connections)| TrafficSample { connections, timestamp })
+            .map(|(timestamp, connections)| TrafficSample {
+                connections,
+                timestamp,
+            })
             .collect()
     }
 
@@ -281,8 +306,13 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    fn mk_ports(ports: &[(u16, u32, &str)]) -> Vec<(u16, u32, String, Option<String>, Option<String>)> {
-        ports.iter().map(|(p, pid, name)| (*p, *pid, name.to_string(), None, None)).collect()
+    fn mk_ports(
+        ports: &[(u16, u32, &str)],
+    ) -> Vec<(u16, u32, String, Option<String>, Option<String>)> {
+        ports
+            .iter()
+            .map(|(p, pid, name)| (*p, *pid, name.to_string(), None, None))
+            .collect()
     }
 
     #[test]
@@ -319,7 +349,10 @@ mod tests {
     fn traffic_samples_capped_at_30() {
         let mut lg = PortLogger::new();
         for _ in 0..35 {
-            lg.update(&mk_ports(&[(3000, 111, "node")]), &HashMap::from([(3000, 5)]));
+            lg.update(
+                &mk_ports(&[(3000, 111, "node")]),
+                &HashMap::from([(3000, 5)]),
+            );
         }
         assert_eq!(lg.get_traffic(3000).len(), 30);
     }
@@ -328,7 +361,10 @@ mod tests {
     fn events_capped_at_200_and_reversed() {
         let mut lg = PortLogger::new();
         for i in 0..210 {
-            lg.update(&mk_ports(&[(1000 + i as u16, i as u32, "x")]), &HashMap::new());
+            lg.update(
+                &mk_ports(&[(1000 + i as u16, i as u32, "x")]),
+                &HashMap::new(),
+            );
             // clear prev to force new started each time on a new port, but we need unique ports to avoid stopped
             // Instead simulate many distinct ports over time
         }
@@ -373,7 +409,9 @@ mod tests {
             &mk_ports(&[(3000, 111, "a"), (3000, 222, "b")]),
             &HashMap::new(),
         );
-        assert!(ev.iter().any(|e| e.event_type == "conflict" && e.port == 3000));
+        assert!(ev
+            .iter()
+            .any(|e| e.event_type == "conflict" && e.port == 3000));
     }
 
     #[test]
@@ -394,13 +432,18 @@ mod tests {
             (3000, 222, "node".into(), None, Some("/two".into())),
         ];
         let ev = lg.update(&ports, &HashMap::new());
-        assert!(ev.iter().any(|e| e.event_type == "conflict" && e.port == 3000));
+        assert!(ev
+            .iter()
+            .any(|e| e.event_type == "conflict" && e.port == 3000));
     }
 
     #[test]
     fn stopped_endpoints_purge_traffic() {
         let mut lg = PortLogger::new();
-        lg.update(&mk_ports(&[(3000, 111, "node")]), &HashMap::from([(3000, 5)]));
+        lg.update(
+            &mk_ports(&[(3000, 111, "node")]),
+            &HashMap::from([(3000, 5)]),
+        );
         lg.update(&[], &HashMap::new());
         assert!(lg.get_all_traffic().is_empty());
         assert_eq!(lg.get_first_seen(3000), None);
@@ -409,7 +452,10 @@ mod tests {
     #[test]
     fn get_all_traffic() {
         let mut lg = PortLogger::new();
-        lg.update(&mk_ports(&[(3000, 1, "a"), (5173, 2, "b")]), &HashMap::from([(3000, 2), (5173, 5)]));
+        lg.update(
+            &mk_ports(&[(3000, 1, "a"), (5173, 2, "b")]),
+            &HashMap::from([(3000, 2), (5173, 5)]),
+        );
         let all = lg.get_all_traffic();
         assert_eq!(all[&3000][0].connections, 2);
         assert_eq!(all[&5173][0].connections, 5);
@@ -434,9 +480,15 @@ mod tests {
     }
 
     fn inject_traffic(lg: &mut PortLogger, port: u16, pid: u32, samples: &[(usize, u64)]) {
-        let entry = lg.traffic.entry((port, pid)).or_insert_with(PortTraffic::new);
+        let entry = lg
+            .traffic
+            .entry((port, pid))
+            .or_insert_with(PortTraffic::new);
         for (conns, ts) in samples {
-            entry.samples.push_back(TrafficSample { connections: *conns, timestamp: *ts });
+            entry.samples.push_back(TrafficSample {
+                connections: *conns,
+                timestamp: *ts,
+            });
         }
     }
 
@@ -447,8 +499,18 @@ mod tests {
         // aggregate while they are live.
         let mut lg = PortLogger::new();
         let base: u64 = 1_000_000; // already aligned to TRAFFIC_BUCKET_MS
-        inject_traffic(&mut lg, 3000, 111, &[(5, base), (7, base + 2000), (7, base + 4000)]);
-        inject_traffic(&mut lg, 3000, 222, &[(7, base + 2000 + 100), (7, base + 4000 + 100)]);
+        inject_traffic(
+            &mut lg,
+            3000,
+            111,
+            &[(5, base), (7, base + 2000), (7, base + 4000)],
+        );
+        inject_traffic(
+            &mut lg,
+            3000,
+            222,
+            &[(7, base + 2000 + 100), (7, base + 4000 + 100)],
+        );
         let merged = lg.get_traffic(3000);
         assert_eq!(merged.len(), 3);
         assert_eq!(merged[0].timestamp, base);

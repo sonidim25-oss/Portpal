@@ -1,4 +1,4 @@
-import type { PortInfo } from "../../app/types";
+import type { PortInfo } from '../../app/types';
 
 export type InspectorDetail = {
   label: string;
@@ -37,7 +37,7 @@ export type BuildInspectorModelInput = {
 
 function observedAgo(observedAt: number, now: number): string {
   const elapsedSeconds = Math.max(0, Math.floor((now - observedAt) / 1_000));
-  if (elapsedSeconds < 60) return "Observed just now";
+  if (elapsedSeconds < 60) return 'Observed just now';
 
   const elapsedMinutes = Math.floor(elapsedSeconds / 60);
   if (elapsedMinutes < 60) return `Observed ${elapsedMinutes}m ago`;
@@ -56,22 +56,27 @@ export function buildInspectorModel({
   killed,
 }: BuildInspectorModelInput): InspectorModel {
   const overview: InspectorDetail[] = [
-    { label: "Port", value: `:${port.port}`, mono: true },
-    { label: "PID", value: String(port.pid), mono: true },
-    { label: "Protocol", value: port.protocol, mono: true },
-    { label: "Connections", value: String(connections), mono: true },
+    { label: 'Port', value: `:${port.port}`, mono: true },
+    { label: 'PID', value: String(port.pid), mono: true },
+    { label: 'Protocol', value: port.protocol, mono: true },
+    { label: 'Connections', value: String(connections), mono: true },
   ];
 
   if (observedAt !== undefined) {
-    overview.push({ label: "Started", value: observedAgo(observedAt, now), mono: false });
+    overview.push({ label: 'Started', value: observedAgo(observedAt, now), mono: false });
   }
 
-  const project = port.project_name || port.project_path
-    ? { ...(port.project_name ? { name: port.project_name } : {}), ...(port.project_path ? { path: port.project_path } : {}) }
-    : undefined;
-  const process = port.process_name || port.start_cmd
-    ? { name: port.process_name, ...(port.start_cmd ? { command: port.start_cmd } : {}) }
-    : undefined;
+  const project =
+    port.project_name || port.project_path
+      ? {
+          ...(port.project_name ? { name: port.project_name } : {}),
+          ...(port.project_path ? { path: port.project_path } : {}),
+        }
+      : undefined;
+  const process =
+    port.process_name || port.start_cmd
+      ? { name: port.process_name, ...(port.start_cmd ? { command: port.start_cmd } : {}) }
+      : undefined;
   const restartable = Boolean(port.start_cmd && port.project_path);
 
   return {

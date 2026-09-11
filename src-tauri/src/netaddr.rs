@@ -149,7 +149,11 @@ pub fn parse_netstat_tcp_row(line: &str) -> Option<NetstatTcpRow> {
     // or `[::]:0`, both of which parse to port 0; `*:*` carries the same
     // meaning and is accepted here so a listener is never dropped over
     // spelling, since a rejected row would silently vanish from the port list.
-    let foreign_port = if parts[2] == "*:*" { 0 } else { parse_port(parts[2])? };
+    let foreign_port = if parts[2] == "*:*" {
+        0
+    } else {
+        parse_port(parts[2])?
+    };
     Some(NetstatTcpRow {
         local_port: parse_port(parts[1])?,
         foreign_port,
@@ -164,8 +168,14 @@ mod tests {
     #[test]
     fn parses_ipv4_and_wildcards() {
         assert_eq!(parse_socket_addr("0.0.0.0:3000"), Some(("0.0.0.0", 3000)));
-        assert_eq!(parse_socket_addr("127.0.0.1:5173"), Some(("127.0.0.1", 5173)));
-        assert_eq!(parse_socket_addr("10.0.0.5:49664"), Some(("10.0.0.5", 49664)));
+        assert_eq!(
+            parse_socket_addr("127.0.0.1:5173"),
+            Some(("127.0.0.1", 5173))
+        );
+        assert_eq!(
+            parse_socket_addr("10.0.0.5:49664"),
+            Some(("10.0.0.5", 49664))
+        );
         assert_eq!(parse_socket_addr("*:3000"), Some(("*", 3000)));
         assert_eq!(parse_socket_addr(":3000"), Some(("", 3000)));
     }
@@ -189,11 +199,23 @@ mod tests {
 
     #[test]
     fn parses_zone_scoped_link_local_addresses() {
-        assert_eq!(parse_socket_addr("fe80::1%en0:8080"), Some(("fe80::1%en0", 8080)));
-        assert_eq!(parse_socket_addr("[fe80::1%en0]:8080"), Some(("fe80::1%en0", 8080)));
-        assert_eq!(parse_socket_addr("fe80::1%lo0:5173"), Some(("fe80::1%lo0", 5173)));
+        assert_eq!(
+            parse_socket_addr("fe80::1%en0:8080"),
+            Some(("fe80::1%en0", 8080))
+        );
+        assert_eq!(
+            parse_socket_addr("[fe80::1%en0]:8080"),
+            Some(("fe80::1%en0", 8080))
+        );
+        assert_eq!(
+            parse_socket_addr("fe80::1%lo0:5173"),
+            Some(("fe80::1%lo0", 5173))
+        );
         // Windows numbers its zones.
-        assert_eq!(parse_socket_addr("[fe80::c0a8:1%12]:445"), Some(("fe80::c0a8:1%12", 445)));
+        assert_eq!(
+            parse_socket_addr("[fe80::c0a8:1%12]:445"),
+            Some(("fe80::c0a8:1%12", 445))
+        );
     }
 
     #[test]
@@ -210,16 +232,28 @@ mod tests {
     #[test]
     fn strips_glued_state_tokens() {
         assert_eq!(parse_socket_addr("*:3000(LISTEN)"), Some(("*", 3000)));
-        assert_eq!(parse_socket_addr("[::1]:5173 (LISTEN)"), Some(("::1", 5173)));
-        assert_eq!(parse_socket_addr("127.0.0.1:5173(ESTABLISHED)"), Some(("127.0.0.1", 5173)));
+        assert_eq!(
+            parse_socket_addr("[::1]:5173 (LISTEN)"),
+            Some(("::1", 5173))
+        );
+        assert_eq!(
+            parse_socket_addr("127.0.0.1:5173(ESTABLISHED)"),
+            Some(("127.0.0.1", 5173))
+        );
         // A state token on its own is not an address.
         assert_eq!(parse_socket_addr("(LISTEN)"), None);
     }
 
     #[test]
     fn accepts_hostname_forms_including_the_fqdn_trailing_dot() {
-        assert_eq!(parse_socket_addr("localhost:3000"), Some(("localhost", 3000)));
-        assert_eq!(parse_socket_addr("db.internal.:5432"), Some(("db.internal.", 5432)));
+        assert_eq!(
+            parse_socket_addr("localhost:3000"),
+            Some(("localhost", 3000))
+        );
+        assert_eq!(
+            parse_socket_addr("db.internal.:5432"),
+            Some(("db.internal.", 5432))
+        );
     }
 
     #[test]
@@ -245,17 +279,33 @@ mod tests {
 
     // Real `netstat -ano` rows. Column widths vary by locale, so every test
     // goes through split_whitespace rather than fixed offsets.
-    const EN_LISTEN: &str = "  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1052";
-    const EN_ESTAB: &str = "  TCP    192.168.1.5:52341      142.250.185.78:443     ESTABLISHED     6789";
+    const EN_LISTEN: &str =
+        "  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1052";
+    const EN_ESTAB: &str =
+        "  TCP    192.168.1.5:52341      142.250.185.78:443     ESTABLISHED     6789";
 
     #[test]
     fn parses_english_listening_and_established_rows() {
         let listen = parse_netstat_tcp_row(EN_LISTEN).expect("listening row");
-        assert_eq!(listen, NetstatTcpRow { local_port: 135, foreign_port: 0, pid: 1052 });
+        assert_eq!(
+            listen,
+            NetstatTcpRow {
+                local_port: 135,
+                foreign_port: 0,
+                pid: 1052
+            }
+        );
         assert!(listen.is_listener());
 
         let estab = parse_netstat_tcp_row(EN_ESTAB).expect("established row");
-        assert_eq!(estab, NetstatTcpRow { local_port: 52341, foreign_port: 443, pid: 6789 });
+        assert_eq!(
+            estab,
+            NetstatTcpRow {
+                local_port: 52341,
+                foreign_port: 443,
+                pid: 6789
+            }
+        );
         assert!(!estab.is_listener());
     }
 
@@ -294,14 +344,32 @@ mod tests {
 
     #[test]
     fn parses_ipv6_rows_in_both_roles() {
-        let listen = parse_netstat_tcp_row("  TCP    [::]:445               [::]:0                 LISTENING       4")
-            .expect("v6 listener");
-        assert_eq!(listen, NetstatTcpRow { local_port: 445, foreign_port: 0, pid: 4 });
+        let listen = parse_netstat_tcp_row(
+            "  TCP    [::]:445               [::]:0                 LISTENING       4",
+        )
+        .expect("v6 listener");
+        assert_eq!(
+            listen,
+            NetstatTcpRow {
+                local_port: 445,
+                foreign_port: 0,
+                pid: 4
+            }
+        );
         assert!(listen.is_listener());
 
-        let estab = parse_netstat_tcp_row("  TCP    [fe80::1%12]:52350     [2606:4700::1111]:443  ESTABLISHED     900")
-            .expect("v6 connection");
-        assert_eq!(estab, NetstatTcpRow { local_port: 52350, foreign_port: 443, pid: 900 });
+        let estab = parse_netstat_tcp_row(
+            "  TCP    [fe80::1%12]:52350     [2606:4700::1111]:443  ESTABLISHED     900",
+        )
+        .expect("v6 connection");
+        assert_eq!(
+            estab,
+            NetstatTcpRow {
+                local_port: 52350,
+                foreign_port: 443,
+                pid: 900
+            }
+        );
         assert!(!estab.is_listener());
     }
 
@@ -310,8 +378,18 @@ mod tests {
         // UDP has no State column at all, so it is both too short and the
         // wrong protocol. Protocol names are not translated, so matching the
         // Proto column stays safe in every locale.
-        assert_eq!(parse_netstat_tcp_row("  UDP    0.0.0.0:5353           *:*                                    2345"), None);
-        assert_eq!(parse_netstat_tcp_row("  Proto  Local Address          Foreign Address        State           PID"), None);
+        assert_eq!(
+            parse_netstat_tcp_row(
+                "  UDP    0.0.0.0:5353           *:*                                    2345"
+            ),
+            None
+        );
+        assert_eq!(
+            parse_netstat_tcp_row(
+                "  Proto  Local Address          Foreign Address        State           PID"
+            ),
+            None
+        );
         assert_eq!(parse_netstat_tcp_row("Active Connections"), None);
         assert_eq!(parse_netstat_tcp_row("Aktive Verbindungen"), None);
         assert_eq!(parse_netstat_tcp_row(""), None);
@@ -320,16 +398,27 @@ mod tests {
 
     #[test]
     fn treats_a_wildcard_foreign_address_as_no_peer() {
-        let row = parse_netstat_tcp_row("  TCP    0.0.0.0:135            *:*                    LISTENING       1052")
-            .expect("wildcard foreign address");
-        assert_eq!(row, NetstatTcpRow { local_port: 135, foreign_port: 0, pid: 1052 });
+        let row = parse_netstat_tcp_row(
+            "  TCP    0.0.0.0:135            *:*                    LISTENING       1052",
+        )
+        .expect("wildcard foreign address");
+        assert_eq!(
+            row,
+            NetstatTcpRow {
+                local_port: 135,
+                foreign_port: 0,
+                pid: 1052
+            }
+        );
         assert!(row.is_listener());
     }
 
     #[test]
     fn rejects_a_tcp_row_whose_pid_is_not_a_number() {
         assert_eq!(
-            parse_netstat_tcp_row("  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       nope"),
+            parse_netstat_tcp_row(
+                "  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       nope"
+            ),
             None
         );
     }
@@ -338,10 +427,11 @@ mod tests {
     fn a_time_wait_row_parses_and_keeps_its_zero_pid() {
         // Windows leaves TIME_WAIT sockets unattributed. The row still parses;
         // dropping PID 0 is the caller's policy (see scanner::is_unattributed_pid).
-        let row = parse_netstat_tcp_row("  TCP    192.168.1.5:52355      142.250.185.78:443     TIME_WAIT       0")
-            .expect("time_wait row");
+        let row = parse_netstat_tcp_row(
+            "  TCP    192.168.1.5:52355      142.250.185.78:443     TIME_WAIT       0",
+        )
+        .expect("time_wait row");
         assert_eq!(row.pid, 0);
         assert!(!row.is_listener());
     }
-
 }
