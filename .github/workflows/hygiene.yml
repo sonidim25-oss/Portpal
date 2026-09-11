@@ -33,7 +33,11 @@ jobs:
         run: npm run format:check
 
   rust-hygiene:
-    runs-on: ubuntu-latest
+    # Windows: Tauri's Linux system dependencies (glib-sys, gobject-sys, …)
+    # are not installed on ubuntu-latest, so a compile-based lint cannot run
+    # there without apt-installing GTK. Windows needs no extra setup
+    # (see build.yml) and matches the primary dev environment.
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
