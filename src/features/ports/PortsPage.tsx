@@ -216,15 +216,21 @@ export function PortsPage({
       </div>
       {killSummary && <div className="kill-summary" role="status">{killSummary}</div>}
       {killSelection && (() => {
-        // Compute ports that share a PID with the selection but aren't in it
-        // (hidden by the current filter). These will also be killed since kill
-        // is per-PID, so the dialog must disclose them.
+        // Compute ports that share a PID with the selection but aren't in it.
+        // These will also be killed since kill is per-PID, so the dialog must
+        // disclose them. Split them into siblings still visible under the
+        // current filter (e.g. deduplicated by uniqueProcesses or the
+        // unselected endpoint of a single-port kill) versus rows genuinely
+        // hidden by the current filter.
         const selectedPids = new Set(killSelection.map((p) => p.pid));
         const selectedKeys = new Set(killSelection.map((p) => `${p.pid}:${p.port}`));
-        const hidden = ports.filter((p) => selectedPids.has(p.pid) && !selectedKeys.has(`${p.pid}:${p.port}`));
+        const filteredKeys = new Set(filteredPorts.map((p) => `${p.pid}:${p.port}`));
+        const siblings = ports.filter((p) => selectedPids.has(p.pid) && !selectedKeys.has(`${p.pid}:${p.port}`) && filteredKeys.has(`${p.pid}:${p.port}`));
+        const hidden = ports.filter((p) => selectedPids.has(p.pid) && !selectedKeys.has(`${p.pid}:${p.port}`) && !filteredKeys.has(`${p.pid}:${p.port}`));
         return <KillConfirmation count={killSelection.length}
           protectedPorts={killSelection.flatMap((port) => { const protectedPort = protectedListener(port); return protectedPort ? [protectedPort] : []; })}
           hiddenPorts={hidden}
+          siblingPorts={siblings}
           onCancel={() => setKillSelection(null)} onConfirm={() => void confirmKills()} />;
       })()}
     </section>
