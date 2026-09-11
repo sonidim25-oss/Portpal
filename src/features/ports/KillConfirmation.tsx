@@ -3,11 +3,13 @@ import { createPortal } from 'react-dom';
 import type { PortInfo } from '../../app/types';
 import { Button } from '../../components/ui/controls';
 
-export function KillConfirmation({ count, protectedPorts, hiddenPorts, onCancel, onConfirm }: {
+export function KillConfirmation({ count, protectedPorts, hiddenPorts, siblingPorts, onCancel, onConfirm }: {
   count: number;
   protectedPorts: PortInfo[];
-  /** Ports sharing a PID with the selection that are hidden by the current filter. */
+  /** Sibling ports sharing a PID with the selection that are hidden by the current filter. */
   hiddenPorts: PortInfo[];
+  /** Sibling ports sharing a PID with the selection that remain visible under the current filter. */
+  siblingPorts?: PortInfo[];
   onCancel(): void;
   onConfirm(): void;
 }) {
@@ -26,8 +28,9 @@ export function KillConfirmation({ count, protectedPorts, hiddenPorts, onCancel,
     };
   }, []);
 
-  // Total ports affected = selected endpoints + hidden siblings
-  const totalPorts = count + hiddenPorts.length;
+  // Total ports affected = selected endpoints + visible siblings + hidden siblings
+  const siblings = siblingPorts ?? [];
+  const totalPorts = count + hiddenPorts.length + siblings.length;
 
   return createPortal(
     <div className="kill-confirmation-overlay">
@@ -57,6 +60,10 @@ export function KillConfirmation({ count, protectedPorts, hiddenPorts, onCancel,
               docs/kill-policy.md. */}
           <p>Only the selected process is stopped. Anything it started keeps running, and a
             child that inherited the socket can hold the port open or restart the service.</p>
+          {siblings.length > 0 && <>
+            <p><strong>Also affected (sibling ports sharing the selected process):</strong></p>
+            <ul>{siblings.map((port) => <li key={`${port.pid}-${port.port}`}>:{port.port} — <strong>{port.process_name}</strong> (PID {port.pid})</li>)}</ul>
+          </>}
           {hiddenPorts.length > 0 && <>
             <p><strong>Also affected (hidden by current filter):</strong></p>
             <ul>{hiddenPorts.map((port) => <li key={`${port.pid}-${port.port}`}>:{port.port} — <strong>{port.process_name}</strong> (PID {port.pid})</li>)}</ul>
