@@ -137,7 +137,7 @@ fn build_graph(
             for a in &src_keys {
                 for b in &dst_keys {
                     if a != b {
-                        add_edge(&mut edges, &mut seen_edges, &mut node_map, *a, *b);
+                        add_edge(&mut edges, &mut seen_edges, *a, *b);
                     }
                 }
             }
@@ -155,7 +155,7 @@ fn build_graph(
                 for sp in src_keys.clone() {
                     for dp in &dst_keys {
                         if sp != *dp {
-                            add_edge(&mut edges, &mut seen_edges, &mut node_map, sp, *dp);
+                            add_edge(&mut edges, &mut seen_edges, sp, *dp);
                         }
                     }
                 }
@@ -169,8 +169,30 @@ fn build_graph(
                 for dp in dst_keys.clone() {
                     for sp in &src_keys {
                         if *sp != dp {
-                            add_edge(&mut edges, &mut seen_edges, &mut node_map, *sp, dp);
+                            add_edge(&mut edges, &mut seen_edges, *sp, dp);
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // Count raw inbound TCP sockets on listening ports.
+    // In TCP, an established inbound connection to a listening service is held
+    // by the server process with its local port (`src_port`) equal to the listening port.
+    // This tracks all active client connections (browsers, test clients, external devices)
+    // as well as inter-service traffic, without double-counting local loopback pairs.
+    for conn in connections {
+        if has_listeners(conn.src_port) {
+            let attributed = conn.src_pid.and_then(|pid| node_map.get_mut(&(conn.src_port, pid)));
+            if let Some(node) = attributed {
+                node.connection_count += 1;
+            } else if let Some(keys) = port_to_keys.get(&conn.src_port) {
+                // If the socket's PID could not be attributed by the OS or does not
+                // directly match a listening PID, attribute to the listening endpoint(s) on that port.
+                if let Some(first_key) = keys.first() {
+                    if let Some(node) = node_map.get_mut(first_key) {
+                        node.connection_count += 1;
                     }
                 }
             }
@@ -186,7 +208,6 @@ fn build_graph(
 fn add_edge(
     edges: &mut Vec<GraphEdge>,
     seen: &mut HashSet<(NodeKey, NodeKey)>,
-    node_map: &mut HashMap<NodeKey, GraphNode>,
     a: NodeKey, b: NodeKey,
 ) {
     let key = if a < b { (a, b) } else { (b, a) };
@@ -196,12 +217,6 @@ fn add_edge(
             target: node_id(b.0, b.1),
             active: true,
         });
-        if let Some(n) = node_map.get_mut(&a) {
-            n.connection_count += 1;
-        }
-        if let Some(n) = node_map.get_mut(&b) {
-            n.connection_count += 1;
-        }
     }
 }
 
@@ -420,7 +435,70 @@ mod tests {
         let mut ids: Vec<&str> = graph.nodes.iter().map(|n| n.id.as_str()).collect();
         ids.sort();
         assert_eq!(ids, vec!["port:47411:0", "port:47412:707"]);
-        assert!(graph.nodes.iter().all(|n| n.connection_count == 0));
+        let n_47411 = graph.nodes.iter().find(|n| n.port == 47411).unwrap();
+        let n_47412 = graph.nodes.iter().find(|n| n.port == 47412).unwrap();
+        assert_eq!(n_47411.connection_count, 0);
+        assert_eq!(n_47412.connection_count, 1);
+    }
+
+    #[test]
+    fn external_client_connections_are_counted_without_edges() {
+        // A browser (Chrome) or client tool connects to localhost:3000.
+        // Chrome does not own any listening port, so no graph edge is created,
+        // but the inbound connection must be counted for port 3000 traffic.
+        let listening = [listening(3000, 1200)];
+        let graph = build_graph(
+            &listening,
+            &[
+                // Server-side socket on listening port 3000
+                conn(3000, 54321, Some(1200), Some(5678)),
+                // Client-side socket on ephemeral port 54321
+                conn(54321, 3000, Some(5678), Some(1200)),
+            ],
+        );
+
+        // No edge since Chrome (PID 5678) is not a listening service
+        assert!(graph.edges.is_empty());
+        assert_eq!(graph.nodes.len(), 1);
+        // Inbound connection counted once (not double-counted by the ephemeral client socket)
+        assert_eq!(graph.nodes[0].connection_count, 1);
+    }
+
+    #[test]
+    fn multiple_client_connections_counted_correctly() {
+        let listening = [listening(3000, 1200)];
+        let graph = build_graph(
+            &listening,
+            &[
+                conn(3000, 54321, Some(1200), None),
+                conn(3000, 54322, Some(1200), None),
+                conn(3000, 54323, Some(1200), None),
+            ],
+        );
+
+        assert!(graph.edges.is_empty());
+        assert_eq!(graph.nodes[0].connection_count, 3);
+    }
+
+    #[test]
+    fn inter_service_connections_create_edges_and_count_inbound() {
+        let listening = [listening(3000, 1200), listening(5173, 1100)];
+        let graph = build_graph(
+            &listening,
+            &[
+                // Server-side socket on backend port 3000
+                conn(3000, 58000, Some(1200), Some(1100)),
+                // Client-side socket on Vite ephemeral port 58000
+                conn(58000, 3000, Some(1100), Some(1200)),
+            ],
+        );
+
+        // Inter-service edge is formed
+        assert_eq!(graph.edges.len(), 1);
+        let backend = graph.nodes.iter().find(|n| n.port == 3000).unwrap();
+        assert_eq!(backend.connection_count, 1);
+        let vite = graph.nodes.iter().find(|n| n.port == 5173).unwrap();
+        assert_eq!(vite.connection_count, 0);
     }
 
     #[test]

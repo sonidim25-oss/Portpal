@@ -19,6 +19,9 @@ playwright-report/
 # Local-only design references (see docs/superpowers/specs/2026-09-02-portpal-monochrome-redesign-design.md)
 New assets/
 
+# Local agent workspace (untracked scratch state, not part of the repo)
+.superpowers/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
