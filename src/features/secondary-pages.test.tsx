@@ -369,4 +369,41 @@ describe('secondary pages', () => {
     expect(screen.getByText('No active ports')).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
+
+  it('renders SettingsPage with text size controls and launch at login toggle', async () => {
+    const user = userEvent.setup();
+    const onFontScale = vi.fn();
+    const onLaunchAtLoginChange = vi.fn();
+
+    const { rerender } = render(
+      <SettingsPage
+        fontScale={1}
+        onFontScale={onFontScale}
+        launchAtLogin={false}
+        onLaunchAtLoginChange={onLaunchAtLoginChange}
+      />,
+    );
+
+    expect(screen.getByText('Settings')).toBeInTheDocument();
+    expect(screen.getByText('Launch at login')).toBeInTheDocument();
+
+    const toggle = screen.getByRole('switch', { name: 'Launch at login' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+
+    await user.click(toggle);
+    expect(onLaunchAtLoginChange).toHaveBeenCalledWith(true);
+
+    rerender(
+      <SettingsPage
+        fontScale={1}
+        onFontScale={onFontScale}
+        launchAtLogin={true}
+        onLaunchAtLoginChange={onLaunchAtLoginChange}
+      />,
+    );
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+    await user.click(screen.getByRole('button', { name: 'Large' }));
+    expect(onFontScale).toHaveBeenCalledWith(1.15);
+  });
 });
