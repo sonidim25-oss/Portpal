@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import fixture from '../../shared/taxonomy.json';
-import { CRITICAL_PORTS, CRITICAL_PROCESS_NAMES, DEV_PORTS, isCriticalPort, isCriticalProcessName, isDevPort } from './taxonomy';
+import {
+  CRITICAL_PORTS,
+  CRITICAL_PROCESS_NAMES,
+  DEV_PORTS,
+  isCriticalPort,
+  isCriticalProcessName,
+  isDevPort,
+} from './taxonomy';
 import { PORT_STYLES } from '../utils/helpers';
 
 // Cross-language contract: this module and src-tauri/src/taxonomy.rs assert
@@ -17,7 +24,9 @@ describe('taxonomy fixture agreement', () => {
   });
 
   it('dev ports match the shared fixture', () => {
-    expect(DEV_PORTS.map((d) => ({ port: d.port, framework: d.framework }))).toEqual(fixture.devPorts);
+    expect(DEV_PORTS.map((d) => ({ port: d.port, framework: d.framework }))).toEqual(
+      fixture.devPorts,
+    );
     for (const { port } of fixture.devPorts) {
       expect(isDevPort(port)).toBe(true);
     }

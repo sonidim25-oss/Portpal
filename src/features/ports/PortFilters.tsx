@@ -1,6 +1,6 @@
-import { useEffect } from "react";
-import type { AdvancedPortFilters, PortFilter, PortCounts } from "../../app/types";
-import { Button, SegmentedControl } from "../../components/ui/controls";
+import { useEffect } from 'react';
+import type { AdvancedPortFilters, PortFilter, PortCounts } from '../../app/types';
+import { Button, SegmentedControl } from '../../components/ui/controls';
 
 type PortFiltersProps = {
   advanced: AdvancedPortFilters;
@@ -13,8 +13,8 @@ type PortFiltersProps = {
 };
 
 export const DEFAULT_ADVANCED_PORT_FILTERS: AdvancedPortFilters = {
-  protocol: "all",
-  project: "all",
+  protocol: 'all',
+  project: 'all',
   restartableOnly: false,
   connectedOnly: false,
 };
@@ -32,13 +32,13 @@ export function PortFilters({
     if (!open) return;
 
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== 'Escape') return;
       onOpenChange(false);
-      document.getElementById("port-filters-trigger")?.focus();
+      document.getElementById('port-filters-trigger')?.focus();
     };
 
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
   }, [onOpenChange, open]);
 
   return (
@@ -48,10 +48,10 @@ export function PortFilters({
         value={category}
         onChange={onCategoryChange}
         options={[
-          { value: "all", label: "All", count: counts.all },
-          { value: "dev", label: "Dev", count: counts.dev },
-          { value: "system", label: "System", count: counts.system },
-          { value: "other", label: "Other", count: counts.other },
+          { value: 'all', label: 'All', count: counts.all },
+          { value: 'dev', label: 'Dev', count: counts.dev },
+          { value: 'system', label: 'System', count: counts.system },
+          { value: 'other', label: 'Other', count: counts.other },
         ]}
       />
 
@@ -76,10 +76,12 @@ export function PortFilters({
               <select
                 aria-label="Protocol"
                 value={advanced.protocol}
-                onChange={(event) => onAdvancedChange({
-                  ...advanced,
-                  protocol: event.target.value as AdvancedPortFilters["protocol"],
-                })}
+                onChange={(event) =>
+                  onAdvancedChange({
+                    ...advanced,
+                    protocol: event.target.value as AdvancedPortFilters['protocol'],
+                  })
+                }
               >
                 <option value="all">All protocols</option>
                 <option value="TCP">TCP</option>
@@ -95,10 +97,12 @@ export function PortFilters({
               <select
                 aria-label="Project"
                 value={advanced.project}
-                onChange={(event) => onAdvancedChange({
-                  ...advanced,
-                  project: event.target.value as AdvancedPortFilters["project"],
-                })}
+                onChange={(event) =>
+                  onAdvancedChange({
+                    ...advanced,
+                    project: event.target.value as AdvancedPortFilters['project'],
+                  })
+                }
               >
                 <option value="all">Any project state</option>
                 <option value="with-project">Has project</option>
@@ -110,7 +114,9 @@ export function PortFilters({
               <input
                 type="checkbox"
                 checked={advanced.restartableOnly}
-                onChange={(event) => onAdvancedChange({ ...advanced, restartableOnly: event.target.checked })}
+                onChange={(event) =>
+                  onAdvancedChange({ ...advanced, restartableOnly: event.target.checked })
+                }
               />
               <span>Restartable only</span>
             </label>
@@ -119,7 +125,9 @@ export function PortFilters({
               <input
                 type="checkbox"
                 checked={advanced.connectedOnly}
-                onChange={(event) => onAdvancedChange({ ...advanced, connectedOnly: event.target.checked })}
+                onChange={(event) =>
+                  onAdvancedChange({ ...advanced, connectedOnly: event.target.checked })
+                }
               />
               <span>Has active connections</span>
             </label>

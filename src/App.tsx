@@ -25,35 +25,107 @@ export default function App() {
   const [page, setPage] = useState<NavPage>('ports');
   const [fontScale, setFontScale] = useState(loadFontScale);
   const {
-    ports, events, traffic, killedPorts, killing, restarting, observedAt,
-    lastScanAt, loading, eventsLoading, errors, toast, refreshPorts, refreshEvents,
-    refreshTraffic, killPort, restartPort,
+    ports,
+    events,
+    traffic,
+    killedPorts,
+    killing,
+    restarting,
+    observedAt,
+    lastScanAt,
+    loading,
+    eventsLoading,
+    errors,
+    toast,
+    refreshPorts,
+    refreshEvents,
+    refreshTraffic,
+    killPort,
+    restartPort,
   } = usePortPalData();
 
   // Pages that only derive from backend data still have to report the failure
   // behind what they are showing, or a failed scan reads as a confident zero.
   // Each page reports the first failure among the sources it renders, and its
   // retry refreshes exactly those sources.
-  const refreshPortsAndTraffic = () => { void refreshPorts(); void refreshTraffic(); };
-  const refreshEverything = () => { refreshPortsAndTraffic(); void refreshEvents(); };
+  const refreshPortsAndTraffic = () => {
+    void refreshPorts();
+    void refreshTraffic();
+  };
+  const refreshEverything = () => {
+    refreshPortsAndTraffic();
+    void refreshEvents();
+  };
 
   useEffect(() => {
     document.documentElement.style.setProperty('--fs-scale', String(fontScale));
-    try { localStorage.setItem(FONT_SCALE_KEY, String(fontScale)); } catch {}
+    try {
+      localStorage.setItem(FONT_SCALE_KEY, String(fontScale));
+    } catch {}
   }, [fontScale]);
 
   return (
     <>
       <AppShell page={page} onNavigate={setPage} ports={ports} lastScanAt={lastScanAt}>
-        {page === 'dashboard' && <DashboardPage ports={ports} events={events} traffic={traffic} error={errors.ports ?? errors.events ?? errors.traffic} onRetry={refreshEverything} onNavigate={setPage} />}
-        {page === 'ports' && <PortsPage ports={ports} traffic={traffic} observedAt={observedAt} killedPorts={killedPorts} killing={killing} restarting={restarting} loading={loading} error={errors.ports} onRetry={refreshPorts} onKill={killPort} onRestart={restartPort} />}
-        {page === 'traffic' && <TrafficPage ports={ports} traffic={traffic} loading={loading} error={errors.traffic ?? errors.ports} onRetry={refreshPortsAndTraffic} />}
-        {page === 'services' && <ServicesPage ports={ports} traffic={traffic} loading={loading} error={errors.ports ?? errors.traffic} onRetry={refreshPortsAndTraffic} />}
-        {page === 'logs' && <LogsPage events={events} loading={eventsLoading} error={errors.events} onRefresh={refreshEvents} />}
+        {page === 'dashboard' && (
+          <DashboardPage
+            ports={ports}
+            events={events}
+            traffic={traffic}
+            error={errors.ports ?? errors.events ?? errors.traffic}
+            onRetry={refreshEverything}
+            onNavigate={setPage}
+          />
+        )}
+        {page === 'ports' && (
+          <PortsPage
+            ports={ports}
+            traffic={traffic}
+            observedAt={observedAt}
+            killedPorts={killedPorts}
+            killing={killing}
+            restarting={restarting}
+            loading={loading}
+            error={errors.ports}
+            onRetry={refreshPorts}
+            onKill={killPort}
+            onRestart={restartPort}
+          />
+        )}
+        {page === 'traffic' && (
+          <TrafficPage
+            ports={ports}
+            traffic={traffic}
+            loading={loading}
+            error={errors.traffic ?? errors.ports}
+            onRetry={refreshPortsAndTraffic}
+          />
+        )}
+        {page === 'services' && (
+          <ServicesPage
+            ports={ports}
+            traffic={traffic}
+            loading={loading}
+            error={errors.ports ?? errors.traffic}
+            onRetry={refreshPortsAndTraffic}
+          />
+        )}
+        {page === 'logs' && (
+          <LogsPage
+            events={events}
+            loading={eventsLoading}
+            error={errors.events}
+            onRefresh={refreshEvents}
+          />
+        )}
         {page === 'settings' && <SettingsPage fontScale={fontScale} onFontScale={setFontScale} />}
       </AppShell>
       {/* Single slot, latest-wins: see showToast in usePortPalData. */}
-      {toast && <div className="toast" role="status">{toast}</div>}
+      {toast && (
+        <div className="toast" role="status">
+          {toast}
+        </div>
+      )}
     </>
   );
 }

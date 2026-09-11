@@ -1,6 +1,6 @@
 /* Port Intel ships its own :root fallbacks; load it first so the token layer
    below can remap --pi-surface / --pi-surface-raised / --pi-border onto the
    design system without the module's standalone palette winning the cascade. */
-@import "./port-intel/port-intel.css";
-@import "./styles/tokens.css";
-@import "./styles/global.css";
+@import './port-intel/port-intel.css';
+@import './styles/tokens.css';
+@import './styles/global.css';

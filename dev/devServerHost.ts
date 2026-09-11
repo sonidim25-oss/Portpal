@@ -11,18 +11,18 @@
  */
 
 /** Loopback address the dev server binds to unless LAN mode is explicitly enabled. */
-export const LOOPBACK_HOST = "127.0.0.1";
+export const LOOPBACK_HOST = '127.0.0.1';
 
 /** HMR websocket port used when LAN mode is enabled (matches Tauri's mobile setup). */
 export const LAN_HMR_PORT = 1421;
 
 /** Environment variables that opt in to LAN exposure, in precedence order. */
-export const LAN_OPT_IN_VARS = ["PORTPAL_ALLOW_LAN", "TAURI_DEV_LAN"] as const;
+export const LAN_OPT_IN_VARS = ['PORTPAL_ALLOW_LAN', 'TAURI_DEV_LAN'] as const;
 
 export type DevServerEnv = Record<string, string | undefined>;
 
 export interface DevServerHmr {
-  protocol: "ws";
+  protocol: 'ws';
   host: string;
   port: number;
 }
@@ -41,7 +41,7 @@ export interface DevServerExposure {
 function isTruthyFlag(value: string | undefined): boolean {
   if (!value) return false;
   const normalized = value.trim().toLowerCase();
-  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
 /** True when the developer explicitly asked for LAN exposure. */
@@ -65,22 +65,22 @@ export function resolveDevServerExposure(env: DevServerEnv): DevServerExposure {
 
   return {
     host: lanHost,
-    hmr: { protocol: "ws", host: lanHost, port: LAN_HMR_PORT },
+    hmr: { protocol: 'ws', host: lanHost, port: LAN_HMR_PORT },
     lanEnabled: true,
     warning: [
-      "",
-      "  ############################################################",
-      "  # PortPal dev server is exposed on the LAN (opt-in)        #",
-      "  ############################################################",
+      '',
+      '  ############################################################',
+      '  # PortPal dev server is exposed on the LAN (opt-in)        #',
+      '  ############################################################',
       `  #  App:  http://${lanHost}:1420`,
       `  #  HMR:  ws://${lanHost}:${LAN_HMR_PORT}`,
-      "  #",
-      "  #  Anyone on this network can load the dev frontend, which",
-      "  #  can invoke privileged kill/restart IPC. Use only on a",
-      "  #  trusted network, and unset PORTPAL_ALLOW_LAN/TAURI_DEV_LAN",
-      "  #  when you are done.",
-      "  ############################################################",
-      "",
-    ].join("\n"),
+      '  #',
+      '  #  Anyone on this network can load the dev frontend, which',
+      '  #  can invoke privileged kill/restart IPC. Use only on a',
+      '  #  trusted network, and unset PORTPAL_ALLOW_LAN/TAURI_DEV_LAN',
+      '  #  when you are done.',
+      '  ############################################################',
+      '',
+    ].join('\n'),
   };
 }

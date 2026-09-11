@@ -1,10 +1,10 @@
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager, Emitter};
-use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
-use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 use crate::scanner::{self, PortInfo};
 use serde::Serialize;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Clone, PartialEq, Debug, Serialize)]
 pub enum TrafficState {
@@ -48,10 +48,13 @@ fn lock_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 fn compute_state(ports: &[PortInfo]) -> TrafficState {
     // Multiple PIDs are normal for SO_REUSEPORT and master/worker servers.
     // Only different process identities indicate a real conflict.
-    let mut seen: std::collections::HashMap<u16, (&str, Option<&str>)> = std::collections::HashMap::new();
+    let mut seen: std::collections::HashMap<u16, (&str, Option<&str>)> =
+        std::collections::HashMap::new();
     for p in ports {
         if let Some((process_name, project_path)) = seen.get(&p.port) {
-            if *process_name != p.process_name.as_str() || *project_path != p.project_path.as_deref() {
+            if *process_name != p.process_name.as_str()
+                || *project_path != p.project_path.as_deref()
+            {
                 return TrafficState::Conflict;
             }
         } else {
@@ -69,16 +72,20 @@ fn compute_state(ports: &[PortInfo]) -> TrafficState {
 
 fn get_icon_bytes(state: &TrafficState) -> &'static [u8] {
     match state {
-        TrafficState::Clear    => include_bytes!("../icons/tray-green.png"),
-        TrafficState::Active   => include_bytes!("../icons/tray-yellow.png"),
+        TrafficState::Clear => include_bytes!("../icons/tray-green.png"),
+        TrafficState::Active => include_bytes!("../icons/tray-yellow.png"),
         TrafficState::Conflict => include_bytes!("../icons/tray-red.png"),
     }
 }
 
 fn get_tooltip(state: &TrafficState, port_count: usize) -> String {
     match state {
-        TrafficState::Clear    => "PortPal — All clear".into(),
-        TrafficState::Active   => format!("PortPal — {} dev port{} active", port_count, if port_count == 1 { "" } else { "s" }),
+        TrafficState::Clear => "PortPal — All clear".into(),
+        TrafficState::Active => format!(
+            "PortPal — {} dev port{} active",
+            port_count,
+            if port_count == 1 { "" } else { "s" }
+        ),
         TrafficState::Conflict => "PortPal — ⚠ Port conflict detected!".into(),
     }
 }
@@ -97,9 +104,9 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
     // Build initial tray with green icon
     let _tray = TrayIconBuilder::new()
-        .icon(tauri::image::Image::from_bytes(
-            include_bytes!("../icons/tray-green.png")
-        )?)
+        .icon(tauri::image::Image::from_bytes(include_bytes!(
+            "../icons/tray-green.png"
+        ))?)
         .tooltip("PortPal — Starting…")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -113,7 +120,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
-            } = event {
+            } = event
+            {
                 show_window(tray.app_handle());
             }
         })
@@ -177,9 +185,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             };
 
             let new_state = compute_state(&ports);
-            let port_count = ports.iter()
-                .filter(|p| is_tray_dev_port(p.port))
-                .count();
+            let port_count = ports.iter().filter(|p| is_tray_dev_port(p.port)).count();
 
             // Update the logger with current ports and connection counts.
             // One snapshot per tick: `ports` comes from a single
@@ -187,17 +193,32 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             // and the graph input, so listing and connection stages can never
             // disagree about what is live.
             {
-                let port_tuples: Vec<(u16, u32, String, Option<String>, Option<String>)> = ports.iter()
+                let port_tuples: Vec<(u16, u32, String, Option<String>, Option<String>)> = ports
+                    .iter()
                     .map(|p| {
                         let fw = crate::taxonomy::get_framework_name(p.port);
-                        (p.port, p.pid, p.process_name.clone(), fw, p.project_path.clone())
+                        (
+                            p.port,
+                            p.pid,
+                            p.process_name.clone(),
+                            fw,
+                            p.project_path.clone(),
+                        )
                     })
                     .collect();
 
                 // Get connection counts from the graph (single connection-tool
                 // spawn per tick, inside get_port_graph).
-                let listening: Vec<(u16, u32, String, Option<String>)> = ports.iter()
-                    .map(|p| (p.port, p.pid, p.process_name.clone(), p.project_name.clone()))
+                let listening: Vec<(u16, u32, String, Option<String>)> = ports
+                    .iter()
+                    .map(|p| {
+                        (
+                            p.port,
+                            p.pid,
+                            p.process_name.clone(),
+                            p.project_name.clone(),
+                        )
+                    })
                     .collect();
                 let graph = crate::connections::get_port_graph(&listening);
                 // Sum across conflicting PIDs sharing a port (last-wins would
@@ -224,9 +245,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     db.pending = new_state.clone();
                     db.since = Instant::now();
                     false
-                } else if db.current != new_state
-                    && db.since.elapsed() >= Duration::from_secs(4)
-                {
+                } else if db.current != new_state && db.since.elapsed() >= Duration::from_secs(4) {
                     // Stable for 4s and different from current — update
                     db.current = new_state.clone();
                     true
@@ -277,7 +296,15 @@ mod tests {
     use crate::scanner::PortInfo;
 
     fn p(port: u16) -> PortInfo {
-        PortInfo { port, pid: 1, process_name: "test".into(), project_path: None, project_name: None, protocol: "TCP".into(), start_cmd: None }
+        PortInfo {
+            port,
+            pid: 1,
+            process_name: "test".into(),
+            project_path: None,
+            project_name: None,
+            protocol: "TCP".into(),
+            start_cmd: None,
+        }
     }
 
     #[test]
@@ -304,18 +331,40 @@ mod tests {
         let ports = vec![p(3000), PortInfo { pid: 2, ..p(3000) }];
         assert_eq!(compute_state(&ports), TrafficState::Active);
 
-        let ports = vec![p(3000), PortInfo { pid: 2, process_name: "other".into(), ..p(3000) }];
+        let ports = vec![
+            p(3000),
+            PortInfo {
+                pid: 2,
+                process_name: "other".into(),
+                ..p(3000)
+            },
+        ];
         assert_eq!(compute_state(&ports), TrafficState::Conflict);
         // Conflict takes precedence over Active
-        let ports2 = vec![p(3000), p(5173), PortInfo { pid: 2, process_name: "other".into(), ..p(3000) }];
+        let ports2 = vec![
+            p(3000),
+            p(5173),
+            PortInfo {
+                pid: 2,
+                process_name: "other".into(),
+                ..p(3000)
+            },
+        ];
         assert_eq!(compute_state(&ports2), TrafficState::Conflict);
     }
 
     #[test]
     fn same_process_name_with_different_projects_is_a_conflict() {
         let ports = vec![
-            PortInfo { project_path: Some("C:/one".into()), ..p(3000) },
-            PortInfo { pid: 2, project_path: Some("C:/two".into()), ..p(3000) },
+            PortInfo {
+                project_path: Some("C:/one".into()),
+                ..p(3000)
+            },
+            PortInfo {
+                pid: 2,
+                project_path: Some("C:/two".into()),
+                ..p(3000)
+            },
         ];
         assert_eq!(compute_state(&ports), TrafficState::Conflict);
     }
@@ -323,9 +372,18 @@ mod tests {
     #[test]
     fn tooltip_messages() {
         assert_eq!(get_tooltip(&TrafficState::Clear, 0), "PortPal — All clear");
-        assert_eq!(get_tooltip(&TrafficState::Active, 1), "PortPal — 1 dev port active");
-        assert_eq!(get_tooltip(&TrafficState::Active, 3), "PortPal — 3 dev ports active");
-        assert_eq!(get_tooltip(&TrafficState::Conflict, 0), "PortPal — ⚠ Port conflict detected!");
+        assert_eq!(
+            get_tooltip(&TrafficState::Active, 1),
+            "PortPal — 1 dev port active"
+        );
+        assert_eq!(
+            get_tooltip(&TrafficState::Active, 3),
+            "PortPal — 3 dev ports active"
+        );
+        assert_eq!(
+            get_tooltip(&TrafficState::Conflict, 0),
+            "PortPal — ⚠ Port conflict detected!"
+        );
     }
 
     #[test]
@@ -344,14 +402,20 @@ mod tests {
         assert_eq!(compute_state(&ports), TrafficState::Active);
         let count = ports.iter().filter(|p| is_tray_dev_port(p.port)).count();
         assert_eq!(count, 1);
-        assert_eq!(get_tooltip(&TrafficState::Active, count), "PortPal — 1 dev port active");
+        assert_eq!(
+            get_tooltip(&TrafficState::Active, count),
+            "PortPal — 1 dev port active"
+        );
     }
 
     #[test]
     fn tray_taxonomy_matches_graph() {
         // Backend surfaces must agree: every graph dev port is a tray dev port.
         for (port, _) in crate::taxonomy::DEV_PORTS {
-            assert!(is_tray_dev_port(*port), "tray missing graph dev port {port}");
+            assert!(
+                is_tray_dev_port(*port),
+                "tray missing graph dev port {port}"
+            );
         }
     }
 }

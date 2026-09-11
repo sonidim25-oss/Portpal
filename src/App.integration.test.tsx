@@ -6,9 +6,33 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 const mockPorts = [
-  { port: 3000, pid: 1111, process_name: 'node', project_name: 'my-app', project_path: '/a/my-app', protocol: 'TCP', start_cmd: 'npm run dev' },
-  { port: 5173, pid: 2222, process_name: 'node', project_name: null, project_path: null, protocol: 'TCP', start_cmd: null },
-  { port: 49664, pid: 3333, process_name: 'lsass.exe', project_name: null, project_path: null, protocol: 'TCP', start_cmd: null },
+  {
+    port: 3000,
+    pid: 1111,
+    process_name: 'node',
+    project_name: 'my-app',
+    project_path: '/a/my-app',
+    protocol: 'TCP',
+    start_cmd: 'npm run dev',
+  },
+  {
+    port: 5173,
+    pid: 2222,
+    process_name: 'node',
+    project_name: null,
+    project_path: null,
+    protocol: 'TCP',
+    start_cmd: null,
+  },
+  {
+    port: 49664,
+    pid: 3333,
+    process_name: 'lsass.exe',
+    project_name: null,
+    project_path: null,
+    protocol: 'TCP',
+    start_cmd: null,
+  },
 ];
 
 describe('App integration - invoke + ports', () => {
@@ -86,15 +110,18 @@ describe('App integration - invoke + ports', () => {
 
     await user.click(screen.getByRole('button', { name: 'Restart port 3000' }));
 
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('restart_process', {
-      port: 3000,
-      pid: 1111,
-    }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith('restart_process', {
+        port: 3000,
+        pid: 1111,
+      }),
+    );
 
     // Regression guard for the command-injection fix: no restart_process call
     // may ever carry an attacker-controllable cmd or cwd.
-    const restartArgs = vi.mocked(invoke).mock.calls
-      .filter(([cmd]) => cmd === 'restart_process')
+    const restartArgs = vi
+      .mocked(invoke)
+      .mock.calls.filter(([cmd]) => cmd === 'restart_process')
       .map(([, args]) => args as Record<string, unknown>);
     expect(restartArgs.length).toBeGreaterThan(0);
     for (const args of restartArgs) {
@@ -108,8 +135,12 @@ describe('App integration - invoke + ports', () => {
     await waitFor(() => expect(screen.getByText('3000')).toBeInTheDocument());
 
     for (const [navigation, heading] of [
-      ['Dashboard', 'Dashboard'], ['Traffic', 'Traffic Monitor'], ['Services', 'Services'],
-      ['Logs', 'Event Logs'], ['Settings', 'Settings'], ['Ports', 'Ports'],
+      ['Dashboard', 'Dashboard'],
+      ['Traffic', 'Traffic Monitor'],
+      ['Services', 'Services'],
+      ['Logs', 'Event Logs'],
+      ['Settings', 'Settings'],
+      ['Ports', 'Ports'],
     ] as const) {
       await user.click(screen.getByRole('button', { name: navigation }));
       expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
@@ -137,14 +168,26 @@ describe('App integration - invoke + ports', () => {
   it('ports-updated event updates list', async () => {
     let portsUpdatedCb: (e: { payload: typeof mockPorts }) => void = () => {};
     vi.mocked(listen).mockImplementation(((event: string, cb: unknown) => {
-      if (event === 'ports-updated') portsUpdatedCb = cb as (e: { payload: typeof mockPorts }) => void;
+      if (event === 'ports-updated')
+        portsUpdatedCb = cb as (e: { payload: typeof mockPorts }) => void;
       return Promise.resolve(() => {});
     }) as never);
     render(<App />);
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('get_ports'));
 
     // Simulate new port arriving via tray emit
-    const newPorts = [...mockPorts, { port: 8000, pid: 4444, process_name: 'python', project_name: null, project_path: null, protocol: 'TCP', start_cmd: null }];
+    const newPorts = [
+      ...mockPorts,
+      {
+        port: 8000,
+        pid: 4444,
+        process_name: 'python',
+        project_name: null,
+        project_path: null,
+        protocol: 'TCP',
+        start_cmd: null,
+      },
+    ];
     await act(async () => {
       portsUpdatedCb({ payload: newPorts });
     });
@@ -160,7 +203,10 @@ describe('App integration - invoke + ports', () => {
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByText('Text size')).toBeInTheDocument();
     // Standard is the default selection.
-    expect(screen.getByRole('button', { name: 'Standard' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Standard' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
 
     await user.click(screen.getByRole('button', { name: 'Larger' }));
     expect(document.documentElement.style.getPropertyValue('--fs-scale')).toBe('1.3');
@@ -187,7 +233,10 @@ describe('App integration - invoke + ports', () => {
     const user = userEvent.setup();
     let scanWorks = false;
     vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === 'get_ports') return scanWorks ? Promise.resolve(mockPorts) : Promise.reject(new Error('`netstat` was not found on PATH'));
+      if (cmd === 'get_ports')
+        return scanWorks
+          ? Promise.resolve(mockPorts)
+          : Promise.reject(new Error('`netstat` was not found on PATH'));
       if (cmd === 'get_port_events') return Promise.resolve([]);
       if (cmd === 'get_port_traffic') return Promise.resolve({});
       return Promise.resolve([]);
@@ -217,7 +266,9 @@ describe('App integration - invoke + ports', () => {
     await waitFor(() => expect(screen.getByText('Unable to load ports')).toBeInTheDocument());
 
     for (const [navigation, retry] of [
-      ['Traffic', 'Retry traffic'], ['Services', 'Retry services'], ['Dashboard', 'Retry dashboard'],
+      ['Traffic', 'Retry traffic'],
+      ['Services', 'Retry services'],
+      ['Dashboard', 'Retry dashboard'],
     ] as const) {
       await user.click(screen.getByRole('button', { name: navigation }));
       expect(screen.getByRole('alert')).toHaveTextContent('scan unavailable');

@@ -44,7 +44,10 @@ describe('PORT_CATALOG shape', () => {
 
   it('only uses categories that have presentation metadata', () => {
     for (const { port, facts } of entries) {
-      expect(CATEGORY_META[facts.category], `port ${port} category ${facts.category}`).toBeDefined();
+      expect(
+        CATEGORY_META[facts.category],
+        `port ${port} category ${facts.category}`,
+      ).toBeDefined();
     }
   });
 

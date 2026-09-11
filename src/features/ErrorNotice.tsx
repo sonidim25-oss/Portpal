@@ -11,7 +11,9 @@ export function ErrorNotice({ message, retryLabel, onRetry }: ErrorNoticeProps) 
   return (
     <div className="secondary-error" role="alert">
       <span>{message}</span>
-      <button onClick={onRetry} aria-label={retryLabel}>Retry</button>
+      <button onClick={onRetry} aria-label={retryLabel}>
+        Retry
+      </button>
     </div>
   );
 }

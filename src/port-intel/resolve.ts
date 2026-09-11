@@ -30,7 +30,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: 'MySQL Database',
       protocol: 'MySQL / MariaDB',
       category: 'database',
-      description: 'A MySQL or MariaDB database server, running on a port other than its usual 3306.',
+      description:
+        'A MySQL or MariaDB database server, running on a port other than its usual 3306.',
       context: 'Normal for a second instance or a container with a remapped port.',
     },
   },
@@ -60,7 +61,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: 'Container Port',
       protocol: 'Docker',
       category: 'infrastructure',
-      description: 'Docker is forwarding this port to a program running inside a container. The real service is whatever the container runs.',
+      description:
+        'Docker is forwarding this port to a program running inside a container. The real service is whatever the container runs.',
       context: 'Normal when containers are running. Stopping the container releases the port.',
     },
   },
@@ -70,7 +72,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: 'Web Server',
       protocol: 'HTTP Server',
       category: 'web',
-      description: 'A web server or reverse proxy handing out pages and routing requests to other services.',
+      description:
+        'A web server or reverse proxy handing out pages and routing requests to other services.',
       context: 'Normal on a machine hosting or proxying websites.',
     },
   },
@@ -81,7 +84,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       protocol: 'SSH',
       category: 'remote-access',
       description: 'An SSH server accepting encrypted remote logins on a non-standard port.',
-      context: 'Moving SSH off port 22 is a common practice. Worth checking if you did not set it up.',
+      context:
+        'Moving SSH off port 22 is a common practice. Worth checking if you did not set it up.',
     },
   },
   {
@@ -90,7 +94,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: 'Java Application',
       protocol: 'Java',
       category: 'dev-server',
-      description: 'A program running on the Java platform. Could be a web server, a build tool, or an application server.',
+      description:
+        'A program running on the Java platform. Could be a web server, a build tool, or an application server.',
       context: 'Normal on a machine doing Java development.',
     },
   },
@@ -100,7 +105,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: 'Python Application',
       protocol: 'Python',
       category: 'dev-server',
-      description: 'A Python program listening for connections, most often a web application or API.',
+      description:
+        'A Python program listening for connections, most often a web application or API.',
       context: 'Normal while a Python project is running.',
     },
   },
@@ -120,7 +126,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: '.NET Application',
       protocol: '.NET',
       category: 'dev-server',
-      description: 'A .NET program listening for connections, usually an ASP.NET web application or API.',
+      description:
+        'A .NET program listening for connections, usually an ASP.NET web application or API.',
       context: 'Normal while a .NET project is running.',
     },
   },
@@ -130,7 +137,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: 'PHP Application',
       protocol: 'PHP',
       category: 'dev-server',
-      description: 'A PHP program listening for connections, usually a website or the PHP-FPM worker behind one.',
+      description:
+        'A PHP program listening for connections, usually a website or the PHP-FPM worker behind one.',
       context: 'Normal while a PHP project is running.',
     },
   },
@@ -140,7 +148,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: 'Node.js Application',
       protocol: 'Node.js',
       category: 'dev-server',
-      description: 'A JavaScript program listening for connections. Usually a development server, an API, or a build tool.',
+      description:
+        'A JavaScript program listening for connections. Usually a development server, an API, or a build tool.',
       context: 'Normal while a JavaScript project is running. Safe to stop when you are done.',
     },
   },
@@ -150,8 +159,10 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: 'Windows System Service',
       protocol: 'Windows',
       category: 'system',
-      description: 'A built-in Windows service. These are started by the operating system, not by you.',
-      context: 'Normal on every Windows machine. Stopping one of these can make the system unstable.',
+      description:
+        'A built-in Windows service. These are started by the operating system, not by you.',
+      context:
+        'Normal on every Windows machine. Stopping one of these can make the system unstable.',
     },
   },
   {
@@ -160,7 +171,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: 'macOS System Service',
       protocol: 'macOS',
       category: 'system',
-      description: 'A built-in macOS service, typically handling device discovery, sharing, or continuity features.',
+      description:
+        'A built-in macOS service, typically handling device discovery, sharing, or continuity features.',
       context: 'Normal on every Mac. Started by the operating system, not by you.',
     },
   },
@@ -170,7 +182,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: 'Web Browser',
       protocol: 'Browser',
       category: 'system',
-      description: 'A web browser holding a local port open, usually for an extension, a devtools connection, or media playback.',
+      description:
+        'A web browser holding a local port open, usually for an extension, a devtools connection, or media playback.',
       context: 'Normal while a browser is open.',
     },
   },
@@ -180,7 +193,8 @@ const PROCESS_HINTS: Array<{ match: RegExp; facts: PortFacts }> = [
       plainName: 'Code Editor',
       protocol: 'IDE',
       category: 'dev-server',
-      description: 'A code editor or IDE holding a port open, typically for a language server, a debugger, or a live preview.',
+      description:
+        'A code editor or IDE holding a port open, typically for a language server, a debugger, or a live preview.',
       context: 'Normal while your editor is open.',
     },
   },
@@ -193,7 +207,8 @@ function factsFromRange(port: number): PortFacts {
       plainName: 'System Service',
       protocol: 'Well-Known Port',
       category: 'system',
-      description: 'A low-numbered port reserved for standard system services. Programs usually need administrator rights to use one.',
+      description:
+        'A low-numbered port reserved for standard system services. Programs usually need administrator rights to use one.',
       context: 'Something on this machine is providing a standard network service here.',
     };
   }
@@ -202,7 +217,8 @@ function factsFromRange(port: number): PortFacts {
       plainName: 'Application Port',
       protocol: 'Registered Port',
       category: 'infrastructure',
-      description: 'A port in the range applications register for their own use. An installed program or a project of yours chose this number.',
+      description:
+        'A port in the range applications register for their own use. An installed program or a project of yours chose this number.',
       context: 'Check the owning process below to see what claimed it.',
     };
   }
@@ -210,7 +226,8 @@ function factsFromRange(port: number): PortFacts {
     plainName: 'Temporary Port',
     protocol: 'Ephemeral Port',
     category: 'system',
-    description: 'A short-lived port the operating system handed out automatically. These are normally one end of an outgoing connection rather than a service you can visit.',
+    description:
+      'A short-lived port the operating system handed out automatically. These are normally one end of an outgoing connection rather than a service you can visit.',
     context: 'Normal and very common. The number changes every time and is not worth remembering.',
   };
 }
@@ -262,11 +279,21 @@ export function explainPort(port: PortLike): PortExplanation {
       context: 'Expected while you are working on this project. Safe to stop when you are done.',
       aliases: known?.aliases,
     };
-    return { ...facts, port: port.port, confidence: 'project', headline: formatHeadline(port.port, facts) };
+    return {
+      ...facts,
+      port: port.port,
+      confidence: 'project',
+      headline: formatHeadline(port.port, facts),
+    };
   }
 
   if (known) {
-    return { ...known, port: port.port, confidence: 'known', headline: formatHeadline(port.port, known) };
+    return {
+      ...known,
+      port: port.port,
+      confidence: 'known',
+      headline: formatHeadline(port.port, known),
+    };
   }
 
   const processName = port.process_name?.trim();
@@ -284,7 +311,12 @@ export function explainPort(port: PortLike): PortExplanation {
   }
 
   const ranged = factsFromRange(port.port);
-  return { ...ranged, port: port.port, confidence: 'range', headline: formatHeadline(port.port, ranged) };
+  return {
+    ...ranged,
+    port: port.port,
+    confidence: 'range',
+    headline: formatHeadline(port.port, ranged),
+  };
 }
 
 /** The category description shown under the chip in the info card. */

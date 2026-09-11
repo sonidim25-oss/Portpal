@@ -46,7 +46,10 @@ describe('PortBadge', () => {
     expect(known.container.querySelector('.pi-badge')).toHaveAttribute('data-confidence', 'known');
 
     const guessed = render(<PortBadge port={port({ port: 49664, process_name: 'mystery.exe' })} />);
-    expect(guessed.container.querySelector('.pi-badge')).toHaveAttribute('data-confidence', 'range');
+    expect(guessed.container.querySelector('.pi-badge')).toHaveAttribute(
+      'data-confidence',
+      'range',
+    );
   });
 
   it('can show the category instead of the service name', () => {
@@ -107,7 +110,7 @@ describe('PortTooltip', () => {
     render(
       <PortTooltip port={port({ port: 5432 })}>
         <span>5432</span>
-      </PortTooltip>
+      </PortTooltip>,
     );
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
@@ -117,14 +120,16 @@ describe('PortTooltip', () => {
     const { container } = render(
       <PortTooltip port={port({ port: 5432 })}>
         <span>5432</span>
-      </PortTooltip>
+      </PortTooltip>,
     );
     const wrapper = container.querySelector('.pi-tooltip') as HTMLElement;
 
     await user.hover(wrapper);
     expect(screen.getByRole('tooltip')).toBeInTheDocument();
     expect(
-      within(screen.getByRole('tooltip')).getByRole('heading', { name: 'Port 5432 (PostgreSQL Database)' })
+      within(screen.getByRole('tooltip')).getByRole('heading', {
+        name: 'Port 5432 (PostgreSQL Database)',
+      }),
     ).toBeInTheDocument();
 
     await user.unhover(wrapper);
@@ -136,7 +141,7 @@ describe('PortTooltip', () => {
     render(
       <PortTooltip port={port({ port: 22 })}>
         <span>22</span>
-      </PortTooltip>
+      </PortTooltip>,
     );
 
     await user.tab();
@@ -148,7 +153,7 @@ describe('PortTooltip', () => {
     render(
       <PortTooltip port={port({ port: 22 })}>
         <span>22</span>
-      </PortTooltip>
+      </PortTooltip>,
     );
 
     await user.tab();
@@ -161,7 +166,7 @@ describe('PortTooltip', () => {
     render(
       <PortTooltip port={port({ port: 22 })}>
         <span>22</span>
-      </PortTooltip>
+      </PortTooltip>,
     );
 
     await user.tab();

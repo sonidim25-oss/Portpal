@@ -1,6 +1,6 @@
-import { defineConfig, loadEnv, type Plugin } from "vite";
-import react from "@vitejs/plugin-react";
-import { resolveDevServerExposure } from "./dev/devServerHost";
+import { defineConfig, loadEnv, type Plugin } from 'vite';
+import react from '@vitejs/plugin-react';
+import { resolveDevServerExposure } from './dev/devServerHost';
 
 // Fail the build if the %VITE_CSP% placeholder in index.html was not replaced.
 // A missing VITE_CSP leaves the literal placeholder text in the output, which
@@ -9,25 +9,25 @@ import { resolveDevServerExposure } from "./dev/devServerHost";
 // it, so this is a latent-risk guard, not an active fix.
 function assertCspReplaced(mode: string): Plugin {
   return {
-    name: "assert-csp-replaced",
+    name: 'assert-csp-replaced',
     // Fail fast with a clear message when VITE_CSP is missing for this mode,
     // before Vite emits an index.html carrying the unreplaced placeholder.
     configResolved() {
       // "." resolves to the project root (cwd) when Vite runs; avoids a
       // `process` reference (no @types/node in this repo).
-      const env = loadEnv(mode, ".", "");
+      const env = loadEnv(mode, '.', '');
       if (!env.VITE_CSP?.trim()) {
         throw new Error(
           `Build failed: VITE_CSP is missing or empty for mode "${mode}". ` +
-            "Define it in .env / .env.development / .env.production.",
+            'Define it in .env / .env.development / .env.production.',
         );
       }
     },
     transformIndexHtml(html) {
-      if (html.includes("%VITE_CSP%")) {
+      if (html.includes('%VITE_CSP%')) {
         throw new Error(
-          "Build failed: %VITE_CSP% placeholder was not replaced in index.html. " +
-            "Define a non-empty VITE_CSP in .env / .env.development / .env.production.",
+          'Build failed: %VITE_CSP% placeholder was not replaced in index.html. ' +
+            'Define a non-empty VITE_CSP in .env / .env.development / .env.production.',
         );
       }
       return html;
@@ -64,7 +64,7 @@ export default defineConfig(async ({ mode }) => ({
     hmr: exposure.hmr,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      ignored: ['**/src-tauri/**'],
     },
   },
 }));

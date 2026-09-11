@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { categoryBlurb, categoryLabel, explainPort, formatHeadline, matchesPortQuery } from './resolve';
+import {
+  categoryBlurb,
+  categoryLabel,
+  explainPort,
+  formatHeadline,
+  matchesPortQuery,
+} from './resolve';
 import { CATALOG_PORTS } from './catalog';
 import type { PortLike } from './types';
 
@@ -91,8 +97,12 @@ describe('explainPort — process hints', () => {
 
   it('prefers the specific runtime over the generic one', () => {
     // "mongod" must not fall through to a generic match.
-    expect(explainPort(port({ port: 40001, process_name: 'mongod' })).plainName).toBe('MongoDB Database');
-    expect(explainPort(port({ port: 40002, process_name: 'node.exe' })).plainName).toBe('Node.js Application');
+    expect(explainPort(port({ port: 40001, process_name: 'mongod' })).plainName).toBe(
+      'MongoDB Database',
+    );
+    expect(explainPort(port({ port: 40002, process_name: 'node.exe' })).plainName).toBe(
+      'Node.js Application',
+    );
   });
 
   it('explains a container-forwarded port', () => {
@@ -133,10 +143,7 @@ describe('explainPort — always answers', () => {
   it('returns a complete explanation for every port number', () => {
     // Sweep the whole space in steps, plus every catalogued port and the
     // boundaries of each range.
-    const samples = new Set<number>([
-      1, 1023, 1024, 49151, 49152, 65535,
-      ...CATALOG_PORTS,
-    ]);
+    const samples = new Set<number>([1, 1023, 1024, 49151, 49152, 65535, ...CATALOG_PORTS]);
     for (let p = 1; p <= 65535; p += 331) samples.add(p);
 
     for (const p of samples) {

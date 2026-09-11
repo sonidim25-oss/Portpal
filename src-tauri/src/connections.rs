@@ -1,9 +1,9 @@
 // `parse_port` serves the macOS and Linux connection parsers; the Windows
 // one parses whole rows through `parse_netstat_tcp_row`.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-use crate::netaddr::parse_port;
 #[cfg(target_os = "windows")]
 use crate::netaddr::parse_netstat_tcp_row;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::netaddr::parse_port;
 use crate::scanner::{is_unattributed_pid, resolve_external_tool, run_scan_tool, ScanError};
 use crate::taxonomy::{get_framework_name, is_dev_port};
 use serde::Serialize;
@@ -76,9 +76,7 @@ fn attributed_pid(pid: u32) -> Option<u32> {
     (!is_unattributed_pid(pid)).then_some(pid)
 }
 
-pub fn get_port_graph(
-    listening: &[(u16, u32, String, Option<String>)],
-) -> PortGraph {
+pub fn get_port_graph(listening: &[(u16, u32, String, Option<String>)]) -> PortGraph {
     build_graph(listening, &get_active_connections())
 }
 
@@ -94,16 +92,19 @@ fn build_graph(
     // conflicting listeners on the same port each keep their node.
     let mut node_map: HashMap<NodeKey, GraphNode> = HashMap::new();
     for (port, pid, process_name, project_name) in listening {
-        node_map.insert((*port, *pid), GraphNode {
-            id: node_id(*port, *pid),
-            port: *port,
-            pid: *pid,
-            process_name: process_name.clone(),
-            project_name: project_name.clone(),
-            framework: get_framework_name(*port),
-            is_dev: is_dev_port(*port),
-            connection_count: 0,
-        });
+        node_map.insert(
+            (*port, *pid),
+            GraphNode {
+                id: node_id(*port, *pid),
+                port: *port,
+                pid: *pid,
+                process_name: process_name.clone(),
+                project_name: project_name.clone(),
+                framework: get_framework_name(*port),
+                is_dev: is_dev_port(*port),
+                connection_count: 0,
+            },
+        );
     }
 
     // Build PID → listening endpoint lookup
@@ -117,14 +118,24 @@ fn build_graph(
     for key in node_map.keys() {
         port_to_keys.entry(key.0).or_default().push(*key);
     }
-    let has_listeners = |port: u16| port_to_keys.get(&port).map(|v| !v.is_empty()).unwrap_or(false);
+    let has_listeners = |port: u16| {
+        port_to_keys
+            .get(&port)
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
+    };
 
     // Build edges from active connections
     let mut edges: Vec<GraphEdge> = Vec::new();
     let mut seen_edges: HashSet<(NodeKey, NodeKey)> = HashSet::new();
 
     for conn in connections {
-        let Connection { src_port, dst_port, src_pid, dst_pid } = conn;
+        let Connection {
+            src_port,
+            dst_port,
+            src_pid,
+            dst_pid,
+        } = conn;
         // Strategy 1: both ports are known listening ports (direct match).
         // On a port conflict every listener on each side gets an edge.
         let src_listen = has_listeners(*src_port);
@@ -184,7 +195,9 @@ fn build_graph(
     // as well as inter-service traffic, without double-counting local loopback pairs.
     for conn in connections {
         if has_listeners(conn.src_port) {
-            let attributed = conn.src_pid.and_then(|pid| node_map.get_mut(&(conn.src_port, pid)));
+            let attributed = conn
+                .src_pid
+                .and_then(|pid| node_map.get_mut(&(conn.src_port, pid)));
             if let Some(node) = attributed {
                 node.connection_count += 1;
             } else if let Some(keys) = port_to_keys.get(&conn.src_port) {
@@ -208,7 +221,8 @@ fn build_graph(
 fn add_edge(
     edges: &mut Vec<GraphEdge>,
     seen: &mut HashSet<(NodeKey, NodeKey)>,
-    a: NodeKey, b: NodeKey,
+    a: NodeKey,
+    b: NodeKey,
 ) {
     let key = if a < b { (a, b) } else { (b, a) };
     if seen.insert(key) {
@@ -279,7 +293,8 @@ fn get_connections_windows() -> Vec<Connection> {
     // Use netstat -ano to get all ESTABLISHED connections with PIDs
     let (tool, args) = connections_tool();
     let output = match resolve_external_tool(tool)
-        .and_then(|executable| Command::new(executable).args(args).output()) {
+        .and_then(|executable| Command::new(executable).args(args).output())
+    {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -291,7 +306,9 @@ fn get_connections_windows() -> Vec<Connection> {
     let mut raw_conns: Vec<(u16, u16, u32)> = Vec::new();
 
     for line in stdout.lines() {
-        let Some(row) = parse_netstat_tcp_row(line) else { continue };
+        let Some(row) = parse_netstat_tcp_row(line) else {
+            continue;
+        };
         // Selecting by the literal word ESTABLISHED found nothing on a
         // non-English Windows, where the State column is translated. That
         // column is no longer read: a row with a non-null Foreign Address has
@@ -299,9 +316,13 @@ fn get_connections_windows() -> Vec<Connection> {
         // SYN_SENT, FIN_WAIT) alongside ESTABLISHED, which is a slight
         // widening. TIME_WAIT, much the most common of them, drops out just
         // below because Windows leaves those sockets unattributed (PID 0).
-        if row.is_listener() { continue; }
+        if row.is_listener() {
+            continue;
+        }
         // A reserved PID owns no identity we can match a node against.
-        let Some(pid) = attributed_pid(row.pid) else { continue };
+        let Some(pid) = attributed_pid(row.pid) else {
+            continue;
+        };
         raw_conns.push((row.local_port, row.foreign_port, pid));
     }
 
@@ -333,7 +354,8 @@ fn get_connections_macos() -> Vec<Connection> {
     // `-iTCP -sTCP:ESTABLISHED` keeps this TCP-only by construction.
     let (tool, args) = connections_tool();
     let output = match resolve_external_tool(tool)
-        .and_then(|executable| Command::new(executable).args(args).output()) {
+        .and_then(|executable| Command::new(executable).args(args).output())
+    {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -343,7 +365,9 @@ fn get_connections_macos() -> Vec<Connection> {
 
     for line in stdout.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 9 { continue; }
+        if parts.len() < 9 {
+            continue;
+        }
 
         let pid: u32 = match parts[1].parse() {
             Ok(p) => p,
@@ -351,7 +375,9 @@ fn get_connections_macos() -> Vec<Connection> {
         };
 
         let name = parts[parts.len() - 1];
-        if !name.contains("->") { continue; }
+        if !name.contains("->") {
+            continue;
+        }
         let mut sides = name.split("->");
         let src = sides.next().and_then(parse_port);
         let dst = sides.next().and_then(parse_port);
@@ -375,7 +401,8 @@ fn get_connections_linux() -> Vec<Connection> {
     // established state to report.
     let (tool, args) = connections_tool();
     let output = match resolve_external_tool(tool)
-        .and_then(|executable| Command::new(executable).args(args).output()) {
+        .and_then(|executable| Command::new(executable).args(args).output())
+    {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -385,19 +412,28 @@ fn get_connections_linux() -> Vec<Connection> {
 
     for line in stdout.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 6 { continue; }
+        if parts.len() < 6 {
+            continue;
+        }
         let src = parse_port(parts[3]);
         let dst = parse_port(parts[4]);
         // Extract PID from the users column, e.g. users:(("node",pid=1234,fd=3)).
         // `ss` omits it for sockets this user cannot attribute, which stays
         // unknown instead of becoming PID 0.
-        let pid: Option<u32> = parts[5].split("pid=").nth(1)
+        let pid: Option<u32> = parts[5]
+            .split("pid=")
+            .nth(1)
             .and_then(|s| s.split(&[',', ')'][..]).next())
             .and_then(|p| p.parse().ok())
             .and_then(attributed_pid);
         if let (Some(s), Some(d)) = (src, dst) {
             // `ss` reports the local owner only; the peer is unattributed.
-            conns.push(Connection { src_port: s, dst_port: d, src_pid: pid, dst_pid: None });
+            conns.push(Connection {
+                src_port: s,
+                dst_port: d,
+                src_pid: pid,
+                dst_pid: None,
+            });
         }
     }
     conns
@@ -412,8 +448,18 @@ mod tests {
         (port, pid, "node".to_string(), None)
     }
 
-    fn conn(src_port: u16, dst_port: u16, src_pid: Option<u32>, dst_pid: Option<u32>) -> Connection {
-        Connection { src_port, dst_port, src_pid, dst_pid }
+    fn conn(
+        src_port: u16,
+        dst_port: u16,
+        src_pid: Option<u32>,
+        dst_pid: Option<u32>,
+    ) -> Connection {
+        Connection {
+            src_port,
+            dst_port,
+            src_pid,
+            dst_pid,
+        }
     }
 
     // ─── Unknown peer vs. PID 0 ──────────────────────────────────────────
@@ -426,11 +472,18 @@ mod tests {
         let listening = [listening(47411, 0), listening(47412, 707)];
         let graph = build_graph(
             &listening,
-            &[conn(47412, 61000, Some(707), None), conn(61001, 47412, None, None)],
+            &[
+                conn(47412, 61000, Some(707), None),
+                conn(61001, 47412, None, None),
+            ],
         );
 
         // The connections attribute no peer, so no edge can be inferred.
-        assert!(graph.edges.is_empty(), "unexpected edges: {:?}", graph.edges);
+        assert!(
+            graph.edges.is_empty(),
+            "unexpected edges: {:?}",
+            graph.edges
+        );
         // And the unknown peer neither created a node nor touched the PID 0 row.
         let mut ids: Vec<&str> = graph.nodes.iter().map(|n| n.id.as_str()).collect();
         ids.sort();
@@ -555,8 +608,16 @@ mod tests {
         // Every edge references a real node id (no dangling port-only ids).
         let known: HashSet<&str> = ids.into_iter().collect();
         for edge in &graph.edges {
-            assert!(known.contains(edge.source.as_str()), "dangling edge source {}", edge.source);
-            assert!(known.contains(edge.target.as_str()), "dangling edge target {}", edge.target);
+            assert!(
+                known.contains(edge.source.as_str()),
+                "dangling edge source {}",
+                edge.source
+            );
+            assert!(
+                known.contains(edge.target.as_str()),
+                "dangling edge target {}",
+                edge.target
+            );
         }
     }
 

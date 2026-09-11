@@ -9,7 +9,13 @@
  */
 
 export { CATALOG_PORTS, CATEGORY_META, PORT_CATALOG } from './catalog';
-export { categoryBlurb, categoryLabel, explainPort, formatHeadline, matchesPortQuery } from './resolve';
+export {
+  categoryBlurb,
+  categoryLabel,
+  explainPort,
+  formatHeadline,
+  matchesPortQuery,
+} from './resolve';
 export { CategoryIcon } from './icons';
 export { PortBadge } from './PortBadge';
 export { PortInfoCard } from './PortInfoCard';

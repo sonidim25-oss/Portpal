@@ -1,8 +1,8 @@
-import type { KeyboardEvent, MouseEvent } from "react";
-import type { PortInfo, TrafficByPort } from "../../app/types";
-import { IconButton } from "../../components/ui/controls";
-import { PortBadge, PortTooltip } from "../../port-intel";
-import { latestConnectionCount, portEndpointKey, timeAgo } from "../../utils/helpers";
+import type { KeyboardEvent, MouseEvent } from 'react';
+import type { PortInfo, TrafficByPort } from '../../app/types';
+import { IconButton } from '../../components/ui/controls';
+import { PortBadge, PortTooltip } from '../../port-intel';
+import { latestConnectionCount, portEndpointKey, timeAgo } from '../../utils/helpers';
 
 export type PortSelection = { port: number; pid: number };
 
@@ -40,7 +40,7 @@ function RestartButton({
 }) {
   return (
     <IconButton
-      label={`${busy ? "Restarting" : "Restart"} port ${port.port}`}
+      label={`${busy ? 'Restarting' : 'Restart'} port ${port.port}`}
       className="ports-table__action"
       disabled={disabled}
       aria-busy={busy || undefined}
@@ -73,7 +73,7 @@ function KillButton({
 }) {
   return (
     <IconButton
-      label={`${busy ? "Killing" : "Kill"} port ${port.port}`}
+      label={`${busy ? 'Killing' : 'Kill'} port ${port.port}`}
       className="ports-table__action ports-table__action--danger"
       disabled={disabled}
       aria-busy={busy || undefined}
@@ -124,30 +124,34 @@ function PortRow({
   const activate = () => onSelect(port);
   const activateFromKeyboard = (event: KeyboardEvent<HTMLTableRowElement>) => {
     if (event.target !== event.currentTarget) return;
-    if (event.key !== "Enter" && event.key !== " ") return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     activate();
   };
 
   return (
     <tr
-      className={killed ? "ports-table__row ports-table__row--stopped" : "ports-table__row"}
+      className={killed ? 'ports-table__row ports-table__row--stopped' : 'ports-table__row'}
       aria-selected={selected}
       tabIndex={0}
       onClick={activate}
       onKeyDown={activateFromKeyboard}
     >
       <td className="ports-table__port">
-        <span className={killed ? "ports-table__dot ports-table__dot--stopped" : "ports-table__dot"} />
+        <span
+          className={killed ? 'ports-table__dot ports-table__dot--stopped' : 'ports-table__dot'}
+        />
         <span className="ports-table__value-stack">
           <PortTooltip port={port}>
             <span className="ports-table__mono ports-table__port-number">{port.port}</span>
           </PortTooltip>
           <span className="ports-table__secondary ports-table__mono">{port.protocol}</span>
         </span>
-        {killed
-          ? <span className="ports-table__stopped-label">STOPPED</span>
-          : <span className="ui-visually-hidden">Listening</span>}
+        {killed ? (
+          <span className="ports-table__stopped-label">STOPPED</span>
+        ) : (
+          <span className="ui-visually-hidden">Listening</span>
+        )}
       </td>
       <td>
         <span className="ports-table__value-stack">
@@ -156,21 +160,27 @@ function PortRow({
             <PortBadge port={port} className="ports-table__intel-badge" />
           </span>
           {port.start_cmd && (
-            <span className="ports-table__secondary ports-table__mono" title={port.start_cmd}>{port.start_cmd}</span>
+            <span className="ports-table__secondary ports-table__mono" title={port.start_cmd}>
+              {port.start_cmd}
+            </span>
           )}
         </span>
       </td>
       <td className="ports-table__project">
         <span className="ports-table__value-stack">
-          <span>{port.project_name ?? "—"}</span>
+          <span>{port.project_name ?? '—'}</span>
           {port.project_path && (
-            <span className="ports-table__secondary ports-table__mono" title={port.project_path}>{port.project_path}</span>
+            <span className="ports-table__secondary ports-table__mono" title={port.project_path}>
+              {port.project_path}
+            </span>
           )}
         </span>
       </td>
       <td className="ports-table__mono">{port.pid}</td>
-      <td className="ports-table__mono ports-table__connections">{killed ? "—" : latestConnectionCount(traffic, port)}</td>
-      <td>{observedAt === undefined ? "—" : timeAgo(observedAt)}</td>
+      <td className="ports-table__mono ports-table__connections">
+        {killed ? '—' : latestConnectionCount(traffic, port)}
+      </td>
+      <td>{observedAt === undefined ? '—' : timeAgo(observedAt)}</td>
       <td className="ports-table__actions">
         {restartable && (
           <RestartButton port={port} busy={isRestarting} disabled={pending} onRestart={onRestart} />
@@ -200,11 +210,17 @@ export function PortTable({
           <tr>
             <th scope="col">PORT</th>
             <th scope="col">PROCESS</th>
-            <th scope="col" className="ports-table__project">PROJECT</th>
+            <th scope="col" className="ports-table__project">
+              PROJECT
+            </th>
             <th scope="col">PID</th>
-            <th scope="col" className="ports-table__connections">CONNECTIONS</th>
+            <th scope="col" className="ports-table__connections">
+              CONNECTIONS
+            </th>
             <th scope="col">STARTED</th>
-            <th scope="col" className="ports-table__actions-heading">ACTIONS</th>
+            <th scope="col" className="ports-table__actions-heading">
+              ACTIONS
+            </th>
           </tr>
         </thead>
         <tbody>

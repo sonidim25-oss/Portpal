@@ -8,26 +8,25 @@ on:
     branches:
       - main
       - feat/portable-build
-  workflow_dispatch: 
+  workflow_dispatch:
 
 jobs:
   build-portable:
     strategy:
       fail-fast: false
       matrix:
-        
         include:
-          - platform: "windows-latest"
-            os: "windows"
-            build_args: "--no-bundle"
-            artifact_name: "PortPal-Windows-Portable.exe"
-            artifact_path: "src-tauri/target/release/portpal.exe"
-            
-          - platform: "ubuntu-22.04"
-            os: "linux"
-            build_args: "--bundles appimage"
-            artifact_name: "PortPal-Linux-Portable.AppImage"
-            artifact_path: "src-tauri/target/release/bundle/appimage/*.AppImage"
+          - platform: 'windows-latest'
+            os: 'windows'
+            build_args: '--no-bundle'
+            artifact_name: 'PortPal-Windows-Portable.exe'
+            artifact_path: 'src-tauri/target/release/portpal.exe'
+
+          - platform: 'ubuntu-22.04'
+            os: 'linux'
+            build_args: '--bundles appimage'
+            artifact_name: 'PortPal-Linux-Portable.AppImage'
+            artifact_path: 'src-tauri/target/release/bundle/appimage/*.AppImage'
 
     runs-on: ${{ matrix.platform }}
 

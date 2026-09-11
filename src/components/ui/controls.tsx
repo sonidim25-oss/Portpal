@@ -1,36 +1,41 @@
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
-import "./ui.css";
+import type { ComponentPropsWithoutRef, ReactNode } from 'react';
+import './ui.css';
 
-type ButtonVariant = "primary" | "secondary" | "danger";
+type ButtonVariant = 'primary' | 'secondary' | 'danger';
 
-type ButtonProps = ComponentPropsWithoutRef<"button"> & {
+type ButtonProps = ComponentPropsWithoutRef<'button'> & {
   variant?: ButtonVariant;
 };
 
-export function Button({ className, variant = "secondary", type = "button", ...props }: ButtonProps) {
+export function Button({
+  className,
+  variant = 'secondary',
+  type = 'button',
+  ...props
+}: ButtonProps) {
   return (
     <button
       {...props}
       type={type}
-      className={["ui-button", `ui-button--${variant}`, className].filter(Boolean).join(" ")}
+      className={['ui-button', `ui-button--${variant}`, className].filter(Boolean).join(' ')}
     />
   );
 }
 
-type IconButtonProps = Omit<ButtonProps, "children" | "aria-label" | "title"> & {
+type IconButtonProps = Omit<ButtonProps, 'children' | 'aria-label' | 'title'> & {
   children: ReactNode;
   label: string;
 };
 
 export function IconButton({ children, className, label, ...props }: IconButtonProps) {
   if (!label.trim()) {
-    throw new Error("IconButton requires a nonempty label");
+    throw new Error('IconButton requires a nonempty label');
   }
 
   return (
     <Button
       {...props}
-      className={["ui-icon-button", className].filter(Boolean).join(" ")}
+      className={['ui-icon-button', className].filter(Boolean).join(' ')}
       aria-label={label}
       title={label}
     >
@@ -39,18 +44,20 @@ export function IconButton({ children, className, label, ...props }: IconButtonP
   );
 }
 
-type SearchInputProps = Omit<ComponentPropsWithoutRef<"input">, "onChange" | "type" | "value"> & {
+type SearchInputProps = Omit<ComponentPropsWithoutRef<'input'>, 'onChange' | 'type' | 'value'> & {
   label: string;
   onChange: (value: string) => void;
   value: string;
 };
 
 export function SearchInput({ className, id, label, onChange, ...props }: SearchInputProps) {
-  const inputId = id ?? `search-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const inputId = id ?? `search-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
   return (
     <div className="ui-search-input-wrap">
-      <label className="ui-visually-hidden" htmlFor={inputId}>{label}</label>
+      <label className="ui-visually-hidden" htmlFor={inputId}>
+        {label}
+      </label>
       <svg className="ui-search-input-icon" viewBox="0 0 16 16" aria-hidden="true">
         <circle cx="6.5" cy="6.5" r="4.5" />
         <path d="m10 10 4 4" />
@@ -59,7 +66,7 @@ export function SearchInput({ className, id, label, onChange, ...props }: Search
         {...props}
         id={inputId}
         type="search"
-        className={["ui-search-input", className].filter(Boolean).join(" ")}
+        className={['ui-search-input', className].filter(Boolean).join(' ')}
         onChange={(event) => onChange(event.target.value)}
       />
     </div>
@@ -96,7 +103,9 @@ export function SegmentedControl<T extends string>({
           onClick={() => onChange(option.value)}
         >
           <span>{option.label}</span>
-          {option.count !== undefined && <span className="ui-segmented-control__count">{option.count}</span>}
+          {option.count !== undefined && (
+            <span className="ui-segmented-control__count">{option.count}</span>
+          )}
         </button>
       ))}
     </div>
@@ -125,7 +134,7 @@ type LoadingStateProps = {
   label?: string;
 };
 
-export function LoadingState({ label = "Loading…" }: LoadingStateProps) {
+export function LoadingState({ label = 'Loading…' }: LoadingStateProps) {
   return (
     <div className="ui-loading-state" role="status">
       <svg className="ui-loading-state__icon" viewBox="0 0 16 16" aria-hidden="true">

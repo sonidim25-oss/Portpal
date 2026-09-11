@@ -28,10 +28,16 @@ export function PortBadge({
 }: PortBadgeProps) {
   const explanation = explainPort(port);
   const text = label === 'category' ? categoryLabel(explanation.category) : explanation.plainName;
-  const classes = ['pi-badge', `pi-badge--${explanation.category}`, className].filter(Boolean).join(' ');
+  const classes = ['pi-badge', `pi-badge--${explanation.category}`, className]
+    .filter(Boolean)
+    .join(' ');
 
   return (
-    <span className={classes} data-category={explanation.category} data-confidence={explanation.confidence}>
+    <span
+      className={classes}
+      data-category={explanation.category}
+      data-confidence={explanation.confidence}
+    >
       <CategoryIcon
         category={explanation.category}
         size={size}
