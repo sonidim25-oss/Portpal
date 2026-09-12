@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { PortEvent, PortInfo, TrafficByPort } from '../app/types';
@@ -7,6 +7,7 @@ import { LogsPage } from './logs/LogsPage';
 import { ServicesPage } from './services/ServicesPage';
 import { SettingsPage } from './settings/SettingsPage';
 import { TrafficPage } from './traffic/TrafficPage';
+import type { PortPalGateway } from '../lib/tauri';
 
 const ports: PortInfo[] = [
   {
@@ -405,5 +406,91 @@ describe('secondary pages', () => {
 
     await user.click(screen.getByRole('button', { name: 'Large' }));
     expect(onFontScale).toHaveBeenCalledWith(1.15);
+  });
+
+  it('loads autostart state from gateway on mount when uncontrolled', async () => {
+    localStorage.clear();
+    const getAutostart = vi.fn().mockResolvedValue(true);
+    const setAutostart = vi.fn().mockResolvedValue(undefined);
+    const gateway: PortPalGateway = {
+      getPorts: vi.fn().mockResolvedValue([]),
+      getPortEvents: vi.fn().mockResolvedValue([]),
+      getPortTraffic: vi.fn().mockResolvedValue({}),
+      killProcess: vi.fn().mockResolvedValue(undefined),
+      restartProcess: vi.fn().mockResolvedValue(undefined),
+      getAutostart,
+      setAutostart,
+      onPortsUpdated: vi.fn().mockResolvedValue(() => {}),
+      onPortEvents: vi.fn().mockResolvedValue(() => {}),
+      onScanDegraded: vi.fn().mockResolvedValue(() => {}),
+      onScanRecovered: vi.fn().mockResolvedValue(() => {}),
+      onScanCompleted: vi.fn().mockResolvedValue(() => {}),
+    };
+
+    render(<SettingsPage fontScale={1} onFontScale={vi.fn()} gateway={gateway} />);
+
+    expect(getAutostart).toHaveBeenCalledTimes(1);
+    const toggle = screen.getByRole('switch', { name: 'Launch at login' });
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+  });
+
+  it('toggles autostart via gateway and updates toggle state', async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    const getAutostart = vi.fn().mockResolvedValue(false);
+    const setAutostart = vi.fn().mockResolvedValue(undefined);
+    const gateway: PortPalGateway = {
+      getPorts: vi.fn().mockResolvedValue([]),
+      getPortEvents: vi.fn().mockResolvedValue([]),
+      getPortTraffic: vi.fn().mockResolvedValue({}),
+      killProcess: vi.fn().mockResolvedValue(undefined),
+      restartProcess: vi.fn().mockResolvedValue(undefined),
+      getAutostart,
+      setAutostart,
+      onPortsUpdated: vi.fn().mockResolvedValue(() => {}),
+      onPortEvents: vi.fn().mockResolvedValue(() => {}),
+      onScanDegraded: vi.fn().mockResolvedValue(() => {}),
+      onScanRecovered: vi.fn().mockResolvedValue(() => {}),
+      onScanCompleted: vi.fn().mockResolvedValue(() => {}),
+    };
+
+    render(<SettingsPage fontScale={1} onFontScale={vi.fn()} gateway={gateway} />);
+
+    const toggle = screen.getByRole('switch', { name: 'Launch at login' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+
+    await user.click(toggle);
+    expect(setAutostart).toHaveBeenCalledWith(true);
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('rolls back autostart toggle if gateway.setAutostart fails', async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    const getAutostart = vi.fn().mockResolvedValue(false);
+    const setAutostart = vi.fn().mockRejectedValue(new Error('registry access denied'));
+    const gateway: PortPalGateway = {
+      getPorts: vi.fn().mockResolvedValue([]),
+      getPortEvents: vi.fn().mockResolvedValue([]),
+      getPortTraffic: vi.fn().mockResolvedValue({}),
+      killProcess: vi.fn().mockResolvedValue(undefined),
+      restartProcess: vi.fn().mockResolvedValue(undefined),
+      getAutostart,
+      setAutostart,
+      onPortsUpdated: vi.fn().mockResolvedValue(() => {}),
+      onPortEvents: vi.fn().mockResolvedValue(() => {}),
+      onScanDegraded: vi.fn().mockResolvedValue(() => {}),
+      onScanRecovered: vi.fn().mockResolvedValue(() => {}),
+      onScanCompleted: vi.fn().mockResolvedValue(() => {}),
+    };
+
+    render(<SettingsPage fontScale={1} onFontScale={vi.fn()} gateway={gateway} />);
+
+    const toggle = screen.getByRole('switch', { name: 'Launch at login' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+
+    await user.click(toggle);
+    expect(setAutostart).toHaveBeenCalledWith(true);
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
   });
 });

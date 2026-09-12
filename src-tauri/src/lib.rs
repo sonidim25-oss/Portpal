@@ -1,3 +1,4 @@
+mod autostart;
 mod connections;
 mod logger;
 mod netaddr;
@@ -69,6 +70,20 @@ fn get_port_traffic() -> HashMap<u16, Vec<logger::TrafficSample>> {
     lg.get_all_traffic()
 }
 
+#[tauri::command]
+async fn get_autostart() -> Result<bool, String> {
+    run_off_thread(autostart::is_autostart_enabled)
+        .await
+        .unwrap_or_else(Err)
+}
+
+#[tauri::command]
+async fn set_autostart(enabled: bool) -> Result<(), String> {
+    run_off_thread(move || autostart::set_autostart(enabled))
+        .await
+        .unwrap_or_else(Err)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -77,7 +92,9 @@ pub fn run() {
             kill_process,
             restart_process,
             get_port_events,
-            get_port_traffic
+            get_port_traffic,
+            get_autostart,
+            set_autostart
         ])
         .setup(|app| {
             // Preflight: confirm every external tool this platform needs

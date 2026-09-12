@@ -37,4 +37,9 @@ libc = "0.2"
 # CloseHandle are enabled; the crate is already in the dependency tree via
 # tauri/sysinfo, so this adds no new supply-chain surface.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_Registry",
+] }
+

@@ -16,6 +16,8 @@ export interface PortPalGateway {
   getPortTraffic(): Promise<TrafficByPort>;
   killProcess(pid: number): Promise<void>;
   restartProcess(port: number, pid: number): Promise<void>;
+  getAutostart(): Promise<boolean>;
+  setAutostart(enabled: boolean): Promise<void>;
   onPortsUpdated(handler: (ports: PortInfo[]) => void): Promise<() => void>;
   onPortEvents(handler: (events: PortEvent[]) => void): Promise<() => void>;
   onScanDegraded(handler: (error: ScanError) => void): Promise<() => void>;
@@ -33,6 +35,8 @@ export const tauriPortPalGateway: PortPalGateway = {
   // directory come from the backend's trusted store, so script running in this
   // webview cannot ask the host to execute anything of its choosing.
   restartProcess: (port, pid) => invoke<void>('restart_process', { port, pid }),
+  getAutostart: () => invoke<boolean>('get_autostart'),
+  setAutostart: (enabled) => invoke<void>('set_autostart', { enabled }),
   onPortsUpdated: (handler) =>
     listen<PortInfo[]>('ports-updated', (event) => handler(event.payload)),
   onPortEvents: (handler) => listen<PortEvent[]>('port-events', (event) => handler(event.payload)),

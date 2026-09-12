@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { tauriPortPalGateway, type PortPalGateway } from '../../lib/tauri';
 
 const TEXT_SIZES = [
   { label: 'Standard', value: 1 },
@@ -13,11 +14,13 @@ export function SettingsPage({
   onFontScale,
   launchAtLogin: controlledLaunch,
   onLaunchAtLoginChange,
+  gateway = tauriPortPalGateway,
 }: {
   fontScale: number;
   onFontScale(value: number): void;
   launchAtLogin?: boolean;
   onLaunchAtLoginChange?: (enabled: boolean) => void;
+  gateway?: PortPalGateway;
 }) {
   const [internalLaunch, setInternalLaunch] = useState(() => {
     try {
@@ -27,17 +30,45 @@ export function SettingsPage({
     }
   });
 
+  useEffect(() => {
+    if (controlledLaunch !== undefined) return;
+    let active = true;
+    Promise.resolve(gateway.getAutostart?.())
+      .then((enabled) => {
+        if (!active || typeof enabled !== 'boolean') return;
+        setInternalLaunch(enabled);
+        try {
+          localStorage.setItem(AUTOSTART_KEY, String(enabled));
+        } catch {}
+      })
+      .catch(() => {
+        // Fall back to localStorage value if backend query fails
+      });
+    return () => {
+      active = false;
+    };
+  }, [controlledLaunch, gateway]);
+
   const launchAtLogin = controlledLaunch ?? internalLaunch;
 
-  const handleToggle = () => {
+  const handleToggle = async () => {
     const next = !launchAtLogin;
     if (onLaunchAtLoginChange) {
       onLaunchAtLoginChange(next);
     } else {
+      const prev = internalLaunch;
       setInternalLaunch(next);
       try {
         localStorage.setItem(AUTOSTART_KEY, String(next));
       } catch {}
+      try {
+        await gateway.setAutostart?.(next);
+      } catch {
+        setInternalLaunch(prev);
+        try {
+          localStorage.setItem(AUTOSTART_KEY, String(prev));
+        } catch {}
+      }
     }
   };
 
