@@ -7,6 +7,8 @@ export interface PortInfo {
   /** Always 'TCP': the backend scans TCP listeners only. See docs/scan-scope.md. */
   protocol: string;
   start_cmd: string | null;
+  cwd?: string | null;
+  env?: Record<string, string> | null;
 }
 
 export interface PortEvent {

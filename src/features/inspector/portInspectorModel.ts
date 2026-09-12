@@ -14,6 +14,9 @@ export type InspectorProject = {
 export type InspectorProcess = {
   name: string;
   command?: string;
+  cwd?: string;
+  env?: Record<string, string>;
+  envUnavailable?: boolean;
 };
 
 export type InspectorModel = {
@@ -73,10 +76,16 @@ export function buildInspectorModel({
           ...(port.project_path ? { path: port.project_path } : {}),
         }
       : undefined;
-  const process =
-    port.process_name || port.start_cmd
-      ? { name: port.process_name, ...(port.start_cmd ? { command: port.start_cmd } : {}) }
-      : undefined;
+  const hasProcessInfo = port.process_name || port.start_cmd || port.cwd || port.env !== undefined;
+  const process: InspectorProcess | undefined = hasProcessInfo
+    ? {
+        name: port.process_name,
+        ...(port.start_cmd ? { command: port.start_cmd } : {}),
+        ...(port.cwd ? { cwd: port.cwd } : {}),
+        ...(port.env && Object.keys(port.env).length > 0 ? { env: port.env } : {}),
+        envUnavailable: port.env === null,
+      }
+    : undefined;
   const restartable = Boolean(port.start_cmd && port.project_path);
 
   return {

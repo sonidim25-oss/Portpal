@@ -61,4 +61,36 @@ describe('buildInspectorModel', () => {
 
     expect(model.actions).toEqual({ canKill: false, canRestart: true });
   });
+
+  it('includes cwd and environment variables in process model when present', () => {
+    const model = buildInspectorModel({
+      port: {
+        ...port,
+        cwd: 'C:\\work\\PortPal',
+        env: { NODE_ENV: 'development', PORT: '3000' },
+      },
+      connections: 1,
+      now: 1_000,
+      killed: false,
+    });
+
+    expect(model.process?.cwd).toBe('C:\\work\\PortPal');
+    expect(model.process?.env).toEqual({ NODE_ENV: 'development', PORT: '3000' });
+    expect(model.process?.envUnavailable).toBe(false);
+  });
+
+  it('flags envUnavailable when env is explicitly null (restricted by OS)', () => {
+    const model = buildInspectorModel({
+      port: {
+        ...port,
+        env: null,
+      },
+      connections: 1,
+      now: 1_000,
+      killed: false,
+    });
+
+    expect(model.process?.envUnavailable).toBe(true);
+    expect(model.process?.env).toBeUndefined();
+  });
 });

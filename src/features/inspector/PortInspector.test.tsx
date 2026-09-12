@@ -130,4 +130,42 @@ describe('PortInspector', () => {
 
     expect(screen.getByRole('button', { name: 'Kill Process' })).toBeDisabled();
   });
+
+  it('renders complete command, cwd, and environment variables when present', () => {
+    renderInspector({
+      port: {
+        ...port,
+        start_cmd: 'node server.js --port 3000',
+        cwd: 'C:\\work\\PortPal\\backend',
+        env: {
+          DATABASE_URL: 'postgres://localhost:5432/mydb',
+          NODE_ENV: 'development',
+        },
+      },
+    });
+
+    expect(screen.getByText('Command')).toBeVisible();
+    expect(screen.getByText('node server.js --port 3000')).toBeVisible();
+    expect(screen.getByText('CWD')).toBeVisible();
+    expect(screen.getByText('C:\\work\\PortPal\\backend')).toBeVisible();
+    expect(screen.getByText('Environment Variables')).toBeVisible();
+    expect(screen.getByText('DATABASE_URL')).toBeInTheDocument();
+    expect(screen.getByText('postgres://localhost:5432/mydb')).toBeInTheDocument();
+    expect(screen.getByText('NODE_ENV')).toBeInTheDocument();
+  });
+
+  it('indicates restricted OS policy when environment variables are unavailable', () => {
+    renderInspector({
+      port: {
+        ...port,
+        env: null,
+      },
+    });
+
+    expect(screen.getByText('Environment Variables')).toBeVisible();
+    expect(screen.getByText('Restricted')).toBeVisible();
+    expect(
+      screen.getByText('Environment variables restricted by OS security policy.'),
+    ).toBeInTheDocument();
+  });
 });
