@@ -16,6 +16,7 @@ export function SettingsPage({
   launchAtLogin: controlledLaunch,
   onLaunchAtLoginChange,
   currentVersion = CURRENT_VERSION,
+  initialUpdate = null,
   gateway = tauriPortPalGateway,
 }: {
   fontScale: number;
@@ -23,6 +24,9 @@ export function SettingsPage({
   launchAtLogin?: boolean;
   onLaunchAtLoginChange?: (enabled: boolean) => void;
   currentVersion?: string;
+  /** Result of the launch-time check, so following the sidebar dot lands on
+   *  the install control instead of an idle "Check for updates" button. */
+  initialUpdate?: UpdateMetadata | null;
   gateway?: PortPalGateway;
 }) {
   const [internalLaunch, setInternalLaunch] = useState(() => {
@@ -35,8 +39,8 @@ export function SettingsPage({
 
   const [updateStatus, setUpdateStatus] = useState<
     'idle' | 'checking' | 'available' | 'up-to-date' | 'installing' | 'error'
-  >('idle');
-  const [updateInfo, setUpdateInfo] = useState<UpdateMetadata | null>(null);
+  >(initialUpdate ? 'available' : 'idle');
+  const [updateInfo, setUpdateInfo] = useState<UpdateMetadata | null>(initialUpdate);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
   useEffect(() => {

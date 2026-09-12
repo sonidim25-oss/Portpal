@@ -312,3 +312,14 @@
     border: 0;
   }
 }
+
+/* Update indicator on the Settings nav item. Pushed to the right edge so it
+   reads as a status on the row rather than punctuation after the label. */
+.shell-sidebar__dot {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--accent-primary, #4ade80);
+  flex: none;
+}
