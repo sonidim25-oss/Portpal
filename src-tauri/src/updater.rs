@@ -69,16 +69,24 @@ pub async fn check_update(app: &AppHandle) -> Result<Option<UpdateMetadata>, Str
 }
 
 /// Downloads and installs the pending update.
+///
+/// The pending update is cloned rather than taken, and cleared only once the
+/// install succeeds. Taking it up front meant a failed download — a dropped
+/// connection, a GitHub hiccup — consumed the only copy, so the retry the user
+/// immediately reaches for reported "no pending update found" and stayed broken
+/// until they ran another check by hand. The sidebar's update dot makes that
+/// state worse, since it keeps advertising an update the Install button can no
+/// longer act on.
 pub async fn install_update(app: &AppHandle) -> Result<(), String> {
     let pending_opt = {
         let Some(pending) = app.try_state::<PendingUpdate>() else {
             return Err("updater state is unavailable".into());
         };
-        let mut lock = pending
+        let lock = pending
             .0
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        lock.take()
+        lock.clone()
     };
 
     let Some(update) = pending_opt else {
@@ -89,6 +97,17 @@ pub async fn install_update(app: &AppHandle) -> Result<(), String> {
         .download_and_install(|_chunk, _total| {}, || {})
         .await
         .map_err(|e| format!("failed to download and install update: {e}"))?;
+
+    // Success only. On Windows the installer usually replaces the running
+    // process before this line is reached; clearing here keeps the state
+    // honest on platforms where control returns.
+    if let Some(pending) = app.try_state::<PendingUpdate>() {
+        let mut lock = pending
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *lock = None;
+    }
 
     Ok(())
 }
