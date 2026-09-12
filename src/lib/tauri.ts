@@ -23,6 +23,7 @@ export interface PortPalGateway {
   getPortTraffic(): Promise<TrafficByPort>;
   killProcess(pid: number): Promise<void>;
   restartProcess(port: number, pid: number): Promise<void>;
+  getProcessEnv(pid: number): Promise<Record<string, string> | null>;
   getAutostart(): Promise<boolean>;
   setAutostart(enabled: boolean): Promise<void>;
   checkUpdate(): Promise<UpdateMetadata | null>;
@@ -44,6 +45,7 @@ export const tauriPortPalGateway: PortPalGateway = {
   // directory come from the backend's trusted store, so script running in this
   // webview cannot ask the host to execute anything of its choosing.
   restartProcess: (port, pid) => invoke<void>('restart_process', { port, pid }),
+  getProcessEnv: (pid) => invoke<Record<string, string> | null>('get_process_env', { pid }),
   getAutostart: () => invoke<boolean>('get_autostart'),
   setAutostart: (enabled) => invoke<void>('set_autostart', { enabled }),
   checkUpdate: () => invoke<UpdateMetadata | null>('check_update'),

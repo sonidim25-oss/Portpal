@@ -8,7 +8,6 @@ export interface PortInfo {
   protocol: string;
   start_cmd: string | null;
   cwd?: string | null;
-  env?: Record<string, string> | null;
 }
 
 export interface PortEvent {

@@ -23,6 +23,7 @@ function createGateway(overrides: Partial<PortPalGateway> = {}): PortPalGateway 
       .mockResolvedValue({ 5173: [{ connections: 3, timestamp: 1000 }] } satisfies TrafficByPort),
     killProcess: vi.fn().mockResolvedValue(undefined),
     restartProcess: vi.fn().mockResolvedValue(undefined),
+    getProcessEnv: vi.fn().mockResolvedValue(null),
     getAutostart: vi.fn().mockResolvedValue(false),
     setAutostart: vi.fn().mockResolvedValue(undefined),
     checkUpdate: vi.fn().mockResolvedValue(null),

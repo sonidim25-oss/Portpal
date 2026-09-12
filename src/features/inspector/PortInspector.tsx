@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { PortInfo, TrafficSample } from '../../app/types';
 import { Button, IconButton } from '../../components/ui/controls';
 import { PortInfoCard } from '../../port-intel';
+import { tauriPortPalGateway, type PortPalGateway } from '../../lib/tauri';
 import { buildInspectorModel, type InspectorDetail } from './portInspectorModel';
 import './PortInspector.css';
 
@@ -16,6 +17,7 @@ export type PortInspectorProps = {
   onKill: (port: PortInfo) => void;
   onRestart: (port: PortInfo) => void;
   now?: number;
+  gateway?: PortPalGateway;
 };
 
 type InspectorSectionProps = {
@@ -58,7 +60,40 @@ export function PortInspector({
   onKill,
   onRestart,
   now = Date.now(),
+  gateway = tauriPortPalGateway,
 }: PortInspectorProps) {
+  const [envState, setEnvState] = useState<{
+    pid: number;
+    loading: boolean;
+    data: Record<string, string> | null;
+  }>({
+    pid: port.pid,
+    loading: true,
+    data: null,
+  });
+
+  useEffect(() => {
+    let active = true;
+    setEnvState({ pid: port.pid, loading: true, data: null });
+
+    gateway
+      .getProcessEnv(port.pid)
+      .then((data) => {
+        if (active) {
+          setEnvState({ pid: port.pid, loading: false, data });
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setEnvState({ pid: port.pid, loading: false, data: null });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [gateway, port.pid]);
+
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -69,7 +104,15 @@ export function PortInspector({
   }, [onClose]);
 
   const connections = traffic[traffic.length - 1]?.connections ?? 0;
-  const model = buildInspectorModel({ port, connections, observedAt, now, killed });
+  const currentEnv = envState.pid === port.pid && !envState.loading ? envState.data : undefined;
+  const model = buildInspectorModel({
+    port,
+    connections,
+    observedAt,
+    now,
+    killed,
+    env: currentEnv,
+  });
   const pending = killing.has(port.pid) || restarting.has(port.pid);
   const projectRows: InspectorDetail[] = model.project
     ? [

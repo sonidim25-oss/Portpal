@@ -87,6 +87,13 @@ async fn set_autostart(enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn get_process_env(pid: u32) -> Result<Option<HashMap<String, String>>, String> {
+    run_off_thread(move || scanner::get_process_env(pid))
+        .await
+        .unwrap_or_else(Err)
+}
+
+#[tauri::command]
 async fn check_update(app: tauri::AppHandle) -> Result<Option<updater::UpdateMetadata>, String> {
     updater::check_update(&app).await
 }
@@ -104,6 +111,7 @@ pub fn run() {
             get_ports,
             kill_process,
             restart_process,
+            get_process_env,
             get_port_events,
             get_port_traffic,
             get_autostart,

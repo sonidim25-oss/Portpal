@@ -36,6 +36,7 @@ export type BuildInspectorModelInput = {
   observedAt?: number;
   now: number;
   killed: boolean;
+  env?: Record<string, string> | null;
 };
 
 function observedAgo(observedAt: number, now: number): string {
@@ -57,6 +58,7 @@ export function buildInspectorModel({
   observedAt,
   now,
   killed,
+  env,
 }: BuildInspectorModelInput): InspectorModel {
   const overview: InspectorDetail[] = [
     { label: 'Port', value: `:${port.port}`, mono: true },
@@ -76,14 +78,14 @@ export function buildInspectorModel({
           ...(port.project_path ? { path: port.project_path } : {}),
         }
       : undefined;
-  const hasProcessInfo = port.process_name || port.start_cmd || port.cwd || port.env !== undefined;
+  const hasProcessInfo = port.process_name || port.start_cmd || port.cwd || env !== undefined;
   const process: InspectorProcess | undefined = hasProcessInfo
     ? {
         name: port.process_name,
         ...(port.start_cmd ? { command: port.start_cmd } : {}),
         ...(port.cwd ? { cwd: port.cwd } : {}),
-        ...(port.env && Object.keys(port.env).length > 0 ? { env: port.env } : {}),
-        envUnavailable: port.env === null,
+        ...(env && Object.keys(env).length > 0 ? { env } : {}),
+        envUnavailable: env === null,
       }
     : undefined;
   const restartable = Boolean(port.start_cmd && port.project_path);
