@@ -52,7 +52,7 @@ macOS builds run but aren't bundled.
 
 ## Build from source
 
-Needs Node 20+ and a Rust toolchain.
+Needs Node 22+ and a Rust toolchain.
 
 ```bash
 git clone https://github.com/sonidim25-oss/Portpal.git
