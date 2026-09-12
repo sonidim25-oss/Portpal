@@ -8,7 +8,7 @@ const TEXT_SIZES = [
 ];
 
 const AUTOSTART_KEY = 'portpal_autostart';
-export const CURRENT_VERSION = '0.5.0';
+export const CURRENT_VERSION = '0.5.1';
 
 export function SettingsPage({
   fontScale,
