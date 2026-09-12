@@ -135,12 +135,9 @@ describe('PortInspector', () => {
     await screen.findByRole('complementary');
   });
 
-  it('renders complete command, cwd, and fetched environment variables when present', async () => {
+  it('renders complete command and cwd without reading the environment', async () => {
     const mockGateway = {
-      getProcessEnv: vi.fn().mockResolvedValue({
-        DATABASE_URL: 'postgres://localhost:5432/mydb',
-        NODE_ENV: 'development',
-      }),
+      getProcessEnv: vi.fn().mockResolvedValue({ DATABASE_URL: 'postgres://localhost/db' }),
     } as unknown as PortPalGateway;
 
     renderInspector({
@@ -155,26 +152,44 @@ describe('PortInspector', () => {
     expect(screen.getByText('Command')).toBeVisible();
     expect(screen.getByText('node server.js --port 3000')).toBeVisible();
     expect(screen.getByText('CWD')).toBeVisible();
-    expect(screen.getByText('C:\\work\\PortPal\\backend')).toBeVisible();
+    expect(screen.getByText('Environment Variables')).toBeVisible();
 
-    expect(await screen.findByText('Environment Variables')).toBeVisible();
+    // A process environment routinely holds credentials. Selecting a row must
+    // not pull them across IPC; only opening the disclosure may.
+    expect(mockGateway.getProcessEnv).not.toHaveBeenCalled();
+    expect(screen.queryByText('DATABASE_URL')).toBeNull();
+  });
+
+  it('reads the environment when the disclosure is opened', async () => {
+    const user = userEvent.setup();
+    const mockGateway = {
+      getProcessEnv: vi.fn().mockResolvedValue({
+        DATABASE_URL: 'postgres://localhost:5432/mydb',
+        NODE_ENV: 'development',
+      }),
+    } as unknown as PortPalGateway;
+
+    renderInspector({ port, gateway: mockGateway });
+
+    await user.click(screen.getByText('Environment Variables'));
+
     expect(await screen.findByText('DATABASE_URL')).toBeInTheDocument();
     expect(await screen.findByText('postgres://localhost:5432/mydb')).toBeInTheDocument();
     expect(await screen.findByText('NODE_ENV')).toBeInTheDocument();
     expect(mockGateway.getProcessEnv).toHaveBeenCalledWith(port.pid);
+    expect(mockGateway.getProcessEnv).toHaveBeenCalledTimes(1);
   });
 
   it('indicates restricted OS policy when environment variables are unavailable', async () => {
+    const user = userEvent.setup();
     const mockGateway = {
       getProcessEnv: vi.fn().mockResolvedValue(null),
     } as unknown as PortPalGateway;
 
-    renderInspector({
-      port,
-      gateway: mockGateway,
-    });
+    renderInspector({ port, gateway: mockGateway });
 
-    expect(await screen.findByText('Environment Variables')).toBeVisible();
+    await user.click(screen.getByText('Environment Variables'));
+
     expect(await screen.findByText('Restricted')).toBeVisible();
     expect(
       await screen.findByText('Environment variables restricted by OS security policy.'),
