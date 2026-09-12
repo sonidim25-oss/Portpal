@@ -3,9 +3,15 @@ name: Hygiene
 # Formatting gates (fail the run) plus Clippy as an advisory signal.
 #
 # Clippy is intentionally NOT `-D warnings` yet: the tree carries pre-existing
-# warnings (a zombie_processes case that needs design review before touching
-# the restart path, dead_code helpers, type_complexity) that are out of scope
-# for a formatting PR. Promote it to a hard gate once those are triaged.
+# warnings (dead_code helpers, type_complexity, and a few small lints) that are
+# out of scope for a formatting PR. Promote it to a hard gate once those are
+# triaged.
+#
+# The zombie_processes case is triaged and gone. It was never on the restart
+# path: `restart_trusted` already stores each spawned Child in
+# `spawned_children()` for the tray loop to reap, and reaps the old handle with
+# `try_wait()` before killing. The lint fired on a test that dropped its helper
+# Child unwaited, which now calls `wait()`.
 
 on:
   push:

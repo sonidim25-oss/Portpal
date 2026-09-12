@@ -2184,7 +2184,7 @@ mod tests {
             .iter()
             .map(|arg| arg.to_string()),
         );
-        spawn_trusted(&rec).unwrap();
+        let mut child = spawn_trusted(&rec).unwrap();
         let output = root.join("received.txt");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let expected = format!("{:?}", rec.args);
@@ -2198,6 +2198,10 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+        // Reap the helper. It has already written its output, so this returns
+        // immediately; without it the Child is dropped unwaited and the test
+        // leaves a zombie behind on Unix.
+        child.wait().unwrap();
         assert!(!root.join("injected.txt").exists());
     }
 

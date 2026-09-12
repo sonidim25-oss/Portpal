@@ -48,6 +48,19 @@ Each tagged release publishes an NSIS installer for Windows and an AppImage for
 Linux on the [Releases](https://github.com/sonidim25-oss/Portpal/releases) page.
 macOS isn't bundled yet — build it from source.
 
+**Windows will warn you on first run.** The installer isn't code-signed, so
+SmartScreen shows "Windows protected your PC" and hides the install button behind
+**More info → Run anyway**. Nothing is wrong with the download; an unsigned binary
+simply has no publisher reputation, and a signing certificate is a recurring cost
+this project doesn't carry yet.
+
+On Linux, mark the AppImage executable before running it:
+
+```bash
+chmod +x portpal_0.5.0_amd64.AppImage
+./portpal_0.5.0_amd64.AppImage
+```
+
 ## Build from source
 
 Needs Node 22+ and a Rust toolchain.
