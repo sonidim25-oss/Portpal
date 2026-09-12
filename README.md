@@ -42,13 +42,11 @@ file in their test suites, so the two halves cannot drift apart.
 and rescans every two seconds. The dashboard keeps a running count of ports,
 detected frameworks, live connections and start/stop events.
 
-![Dashboard with port counts, active services and recent events](docs/screenshots/dashboard.png)
-
 ## Install
 
-No builds are published yet — build from source for now. The bundle targets are set
-up for an NSIS installer and portable `.exe` on Windows and an AppImage on Linux;
-macOS builds run but aren't bundled.
+Each tagged release publishes an NSIS installer for Windows and an AppImage for
+Linux on the [Releases](https://github.com/sonidim25-oss/Portpal/releases) page.
+macOS isn't bundled yet — build it from source.
 
 ## Build from source
 
