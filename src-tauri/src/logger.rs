@@ -11,6 +11,13 @@ const TRAFFIC_BUCKET_MS: u64 = 2000;
 const TRAFFIC_MAX_SAMPLES: usize = 30;
 
 /// A single port event (started, stopped, etc.)
+/// One scanned listener as the tray hands it to the logger:
+/// `(port, pid, process name, project path, project name)`.
+///
+/// Named because the bare tuple appeared in three signatures across two
+/// modules and tripped `clippy::type_complexity` in each.
+pub type PortSnapshot = (u16, u32, String, Option<String>, Option<String>);
+
 #[derive(Serialize, Clone, Debug)]
 pub struct PortEvent {
     pub port: u16,
@@ -87,7 +94,7 @@ impl PortLogger {
     /// `conn_counts` is keyed by port (aggregated across conflicting PIDs).
     pub fn update(
         &mut self,
-        ports: &[(u16, u32, String, Option<String>, Option<String>)],
+        ports: &[PortSnapshot],
         conn_counts: &HashMap<u16, usize>,
     ) -> Vec<PortEvent> {
         let ts = now_millis();
@@ -177,7 +184,7 @@ impl PortLogger {
         self.conflicts = new_conflicts;
 
         // Update traffic samples per endpoint
-        for (key, _) in &current {
+        for key in current.keys() {
             // Per-endpoint share is unknown from aggregated counts; each live
             // endpoint records the port aggregate so retained history survives
             // worker turnover and no endpoint reports zero while the port is busy.
@@ -276,6 +283,9 @@ impl PortLogger {
         out
     }
 
+    /// Test-only: production reads first-seen through the event stream, not
+    /// this accessor. Kept because the retention tests assert on it directly.
+    #[cfg(test)]
     pub fn get_first_seen(&self, port: u16) -> Option<u64> {
         // Earliest across live PIDs on this port (compat: frontend keys by port).
         self.first_seen
@@ -283,11 +293,6 @@ impl PortLogger {
             .filter(|((p, _), _)| *p == port)
             .map(|(_, ts)| *ts)
             .min()
-    }
-
-    /// Per-endpoint first-seen for pid-aware callers.
-    pub fn get_first_seen_endpoint(&self, port: u16, pid: u32) -> Option<u64> {
-        self.first_seen.get(&(port, pid)).copied()
     }
 }
 
@@ -306,9 +311,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    fn mk_ports(
-        ports: &[(u16, u32, &str)],
-    ) -> Vec<(u16, u32, String, Option<String>, Option<String>)> {
+    fn mk_ports(ports: &[(u16, u32, &str)]) -> Vec<PortSnapshot> {
         ports
             .iter()
             .map(|(p, pid, name)| (*p, *pid, name.to_string(), None, None))
@@ -323,7 +326,7 @@ mod tests {
         assert_eq!(ev.len(), 1);
         assert_eq!(ev[0].port, 3000);
         assert_eq!(ev[0].event_type, "started");
-        assert_eq!(lg.get_first_seen(3000).is_some(), true);
+        assert!(lg.get_first_seen(3000).is_some());
     }
 
     #[test]

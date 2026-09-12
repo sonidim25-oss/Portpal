@@ -193,7 +193,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             // and the graph input, so listing and connection stages can never
             // disagree about what is live.
             {
-                let port_tuples: Vec<(u16, u32, String, Option<String>, Option<String>)> = ports
+                let port_tuples: Vec<crate::logger::PortSnapshot> = ports
                     .iter()
                     .map(|p| {
                         let fw = crate::taxonomy::get_framework_name(p.port);

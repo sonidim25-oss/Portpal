@@ -1,17 +1,16 @@
 name: Hygiene
 
-# Formatting gates (fail the run) plus Clippy as an advisory signal.
+# Formatting and lint gates. All three fail the run.
 #
-# Clippy is intentionally NOT `-D warnings` yet: the tree carries pre-existing
-# warnings (dead_code helpers, type_complexity, and a few small lints) that are
-# out of scope for a formatting PR. Promote it to a hard gate once those are
-# triaged.
+# Clippy is `-D warnings`: the tree is clean, so any new warning is a
+# regression rather than pre-existing noise. The backlog that kept it advisory
+# is gone — zombie_processes (a test that dropped its helper Child unwaited),
+# dead_code (one unused accessor deleted, one made test-only), and
+# type_complexity (a five-field tuple that now has a name, logger::PortSnapshot).
 #
-# The zombie_processes case is triaged and gone. It was never on the restart
-# path: `restart_trusted` already stores each spawned Child in
-# `spawned_children()` for the tray loop to reap, and reaps the old handle with
-# `try_wait()` before killing. The lint fired on a test that dropped its helper
-# Child unwaited, which now calls `wait()`.
+# One lint is allowed in place rather than obeyed: needless_return in
+# scanner::resolve_external_tool, where the cfg-gated Windows arm must return
+# so the Unix block below it stays reachable. The rationale is at the call site.
 
 on:
   push:
@@ -57,6 +56,6 @@ jobs:
         working-directory: src-tauri
         run: cargo fmt --check
 
-      - name: cargo clippy (advisory)
+      - name: cargo clippy
         working-directory: src-tauri
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-targets -- -D warnings

@@ -62,37 +62,40 @@ export function PortInspector({
   now = Date.now(),
   gateway = tauriPortPalGateway,
 }: PortInspectorProps) {
+  // Environment variables are fetched only when the user opens the disclosure,
+  // never on selection. A process environment routinely holds credentials —
+  // tokens, connection strings with passwords — so it crosses the IPC boundary
+  // when someone asks to read it, not every time a row is clicked.
   const [envState, setEnvState] = useState<{
     pid: number;
-    loading: boolean;
+    status: 'idle' | 'loading' | 'loaded';
     data: Record<string, string> | null;
   }>({
     pid: port.pid,
-    loading: true,
+    status: 'idle',
     data: null,
   });
 
+  // Selecting a different port discards the previous process's variables and
+  // closes the disclosure, so an open panel never shows one process's
+  // environment under another's pid.
   useEffect(() => {
-    let active = true;
-    setEnvState({ pid: port.pid, loading: true, data: null });
+    setEnvState({ pid: port.pid, status: 'idle', data: null });
+  }, [port.pid]);
+
+  const requestEnv = (pid: number) => {
+    if (envState.status !== 'idle' || envState.pid !== pid) return;
+    setEnvState({ pid, status: 'loading', data: null });
+
+    const settle = (data: Record<string, string> | null) =>
+      // The pid guard drops a response that arrives after the user moved on.
+      setEnvState((current) => (current.pid === pid ? { pid, status: 'loaded', data } : current));
 
     gateway
-      .getProcessEnv(port.pid)
-      .then((data) => {
-        if (active) {
-          setEnvState({ pid: port.pid, loading: false, data });
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setEnvState({ pid: port.pid, loading: false, data: null });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [gateway, port.pid]);
+      .getProcessEnv(pid)
+      .then(settle)
+      .catch(() => settle(null));
+  };
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -104,7 +107,8 @@ export function PortInspector({
   }, [onClose]);
 
   const connections = traffic[traffic.length - 1]?.connections ?? 0;
-  const currentEnv = envState.pid === port.pid && !envState.loading ? envState.data : undefined;
+  const currentEnv =
+    envState.pid === port.pid && envState.status === 'loaded' ? envState.data : undefined;
   const model = buildInspectorModel({
     port,
     connections,
@@ -131,6 +135,16 @@ export function PortInspector({
     : [];
 
   const envEntries = model.process?.env ? Object.entries(model.process.env) : [];
+  // The summary carries the state, so a closed disclosure still says whether
+  // there is anything behind it once it has been opened before.
+  const envSummary =
+    envState.status === 'loading'
+      ? '…'
+      : envState.status === 'loaded'
+        ? model.process?.envUnavailable
+          ? 'Restricted'
+          : envEntries.length
+        : '';
 
   return (
     <aside className="port-inspector" aria-label={`Port inspector for :${port.port}`}>
@@ -153,35 +167,34 @@ export function PortInspector({
         {projectRows.length > 0 && <InspectorSection title="Project" rows={projectRows} />}
         {model.process && (
           <InspectorSection title="Process" rows={processRows}>
-            {envEntries.length > 0 && (
-              <details className="port-inspector__env-details">
-                <summary className="port-inspector__env-summary">
-                  <span>Environment Variables</span>
-                  <span className="port-inspector__env-count">{envEntries.length}</span>
-                </summary>
-                <div className="port-inspector__env-list">
-                  {envEntries.map(([key, val]) => (
-                    <div className="port-inspector__env-item" key={key}>
-                      <span className="port-inspector__env-key">{key}</span>
-                      <span className="port-inspector__env-val">{val}</span>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            )}
-            {model.process.envUnavailable && (
-              <details className="port-inspector__env-details">
-                <summary className="port-inspector__env-summary">
-                  <span>Environment Variables</span>
-                  <span className="port-inspector__env-count">Restricted</span>
-                </summary>
-                <div className="port-inspector__env-list">
+            <details
+              className="port-inspector__env-details"
+              key={port.pid}
+              onToggle={(event) => {
+                if (event.currentTarget.open) requestEnv(port.pid);
+              }}
+            >
+              <summary className="port-inspector__env-summary">
+                <span>Environment Variables</span>
+                <span className="port-inspector__env-count">{envSummary}</span>
+              </summary>
+              <div className="port-inspector__env-list">
+                {envState.status === 'loading' && (
+                  <span className="port-inspector__env-restricted">Reading environment…</span>
+                )}
+                {envState.status === 'loaded' && model.process.envUnavailable && (
                   <span className="port-inspector__env-restricted">
                     Environment variables restricted by OS security policy.
                   </span>
-                </div>
-              </details>
-            )}
+                )}
+                {envEntries.map(([key, val]) => (
+                  <div className="port-inspector__env-item" key={key}>
+                    <span className="port-inspector__env-key">{key}</span>
+                    <span className="port-inspector__env-val">{val}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
           </InspectorSection>
         )}
       </div>

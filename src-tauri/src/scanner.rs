@@ -81,6 +81,11 @@ impl std::fmt::Display for ScanError {
 /// Resolves an OS utility to a stable, trusted path before spawning it.
 /// Windows utilities are pinned to System32. Unix uses conventional system
 /// locations first and validates PATH fallbacks before accepting them.
+// The Windows arm's `return` looks needless to clippy because the `#[cfg(unix)]`
+// block below is compiled out on Windows, leaving it as the final expression.
+// Dropping it would make the Windows block a bare statement and break the Unix
+// build, so the lint is allowed rather than obeyed.
+#[allow(clippy::needless_return)]
 pub(crate) fn resolve_external_tool(tool: &'static str) -> io::Result<PathBuf> {
     #[cfg(target_os = "windows")]
     {
@@ -282,8 +287,12 @@ pub fn get_process_env(pid: u32) -> Result<Option<HashMap<String, String>>, Stri
         return Ok(None);
     }
 
+    // One pid, so refresh only that pid. A full `refresh_processes()` walks
+    // every process on the machine, and this runs on each disclosure open.
     let mut sys = System::new();
-    sys.refresh_processes();
+    if !sys.refresh_process(sysinfo::Pid::from(pid as usize)) {
+        return Ok(None);
+    }
 
     let process = match sys.process(sysinfo::Pid::from(pid as usize)) {
         Some(p) => p,
@@ -434,7 +443,7 @@ fn kill_pid_with(pid: u32, ports: &[PortInfo], target: KillTarget) -> Result<(),
         .split(',')
         .filter_map(|port| port.trim().parse::<u16>().ok())
         .collect::<Vec<_>>();
-    validate_kill(pid, &ports, &additional)?;
+    validate_kill(pid, ports, &additional)?;
     let mut sys = System::new();
     sys.refresh_processes();
     let process = sys
