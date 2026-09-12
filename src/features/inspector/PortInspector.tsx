@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { PortInfo, TrafficSample } from '../../app/types';
 import { Button, IconButton } from '../../components/ui/controls';
 import { PortInfoCard } from '../../port-intel';
+import { tauriPortPalGateway, type PortPalGateway } from '../../lib/tauri';
 import { buildInspectorModel, type InspectorDetail } from './portInspectorModel';
 import './PortInspector.css';
 
@@ -16,14 +17,16 @@ export type PortInspectorProps = {
   onKill: (port: PortInfo) => void;
   onRestart: (port: PortInfo) => void;
   now?: number;
+  gateway?: PortPalGateway;
 };
 
 type InspectorSectionProps = {
   title: string;
   rows: InspectorDetail[];
+  children?: React.ReactNode;
 };
 
-function InspectorSection({ title, rows }: InspectorSectionProps) {
+function InspectorSection({ title, rows, children }: InspectorSectionProps) {
   const headingId = `port-inspector-${title.toLowerCase()}`;
 
   return (
@@ -31,14 +34,17 @@ function InspectorSection({ title, rows }: InspectorSectionProps) {
       <h3 id={headingId} className="port-inspector__section-title">
         {title}
       </h3>
-      <dl className="port-inspector__details">
-        {rows.map((row) => (
-          <div className="port-inspector__detail" key={row.label}>
-            <dt>{row.label}</dt>
-            <dd className={row.mono ? 'port-inspector__value--mono' : undefined}>{row.value}</dd>
-          </div>
-        ))}
-      </dl>
+      {rows.length > 0 && (
+        <dl className="port-inspector__details">
+          {rows.map((row) => (
+            <div className="port-inspector__detail" key={row.label}>
+              <dt>{row.label}</dt>
+              <dd className={row.mono ? 'port-inspector__value--mono' : undefined}>{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {children}
     </section>
   );
 }
@@ -54,7 +60,40 @@ export function PortInspector({
   onKill,
   onRestart,
   now = Date.now(),
+  gateway = tauriPortPalGateway,
 }: PortInspectorProps) {
+  const [envState, setEnvState] = useState<{
+    pid: number;
+    loading: boolean;
+    data: Record<string, string> | null;
+  }>({
+    pid: port.pid,
+    loading: true,
+    data: null,
+  });
+
+  useEffect(() => {
+    let active = true;
+    setEnvState({ pid: port.pid, loading: true, data: null });
+
+    gateway
+      .getProcessEnv(port.pid)
+      .then((data) => {
+        if (active) {
+          setEnvState({ pid: port.pid, loading: false, data });
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setEnvState({ pid: port.pid, loading: false, data: null });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [gateway, port.pid]);
+
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -65,7 +104,15 @@ export function PortInspector({
   }, [onClose]);
 
   const connections = traffic[traffic.length - 1]?.connections ?? 0;
-  const model = buildInspectorModel({ port, connections, observedAt, now, killed });
+  const currentEnv = envState.pid === port.pid && !envState.loading ? envState.data : undefined;
+  const model = buildInspectorModel({
+    port,
+    connections,
+    observedAt,
+    now,
+    killed,
+    env: currentEnv,
+  });
   const pending = killing.has(port.pid) || restarting.has(port.pid);
   const projectRows: InspectorDetail[] = model.project
     ? [
@@ -79,8 +126,11 @@ export function PortInspector({
         ...(model.process.command
           ? [{ label: 'Command', value: model.process.command, mono: true }]
           : []),
+        ...(model.process.cwd ? [{ label: 'CWD', value: model.process.cwd, mono: true }] : []),
       ]
     : [];
+
+  const envEntries = model.process?.env ? Object.entries(model.process.env) : [];
 
   return (
     <aside className="port-inspector" aria-label={`Port inspector for :${port.port}`}>
@@ -101,7 +151,39 @@ export function PortInspector({
         <PortInfoCard port={port} headingLevel="h3" className="port-inspector__intel" />
         <InspectorSection title="Overview" rows={model.overview} />
         {projectRows.length > 0 && <InspectorSection title="Project" rows={projectRows} />}
-        {processRows.length > 0 && <InspectorSection title="Process" rows={processRows} />}
+        {model.process && (
+          <InspectorSection title="Process" rows={processRows}>
+            {envEntries.length > 0 && (
+              <details className="port-inspector__env-details">
+                <summary className="port-inspector__env-summary">
+                  <span>Environment Variables</span>
+                  <span className="port-inspector__env-count">{envEntries.length}</span>
+                </summary>
+                <div className="port-inspector__env-list">
+                  {envEntries.map(([key, val]) => (
+                    <div className="port-inspector__env-item" key={key}>
+                      <span className="port-inspector__env-key">{key}</span>
+                      <span className="port-inspector__env-val">{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+            {model.process.envUnavailable && (
+              <details className="port-inspector__env-details">
+                <summary className="port-inspector__env-summary">
+                  <span>Environment Variables</span>
+                  <span className="port-inspector__env-count">Restricted</span>
+                </summary>
+                <div className="port-inspector__env-list">
+                  <span className="port-inspector__env-restricted">
+                    Environment variables restricted by OS security policy.
+                  </span>
+                </div>
+              </details>
+            )}
+          </InspectorSection>
+        )}
       </div>
 
       {(model.actions.canKill || model.actions.canRestart) && (

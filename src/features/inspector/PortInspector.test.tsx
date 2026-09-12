@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PortInspector } from './PortInspector';
 import type { PortInfo, TrafficSample } from '../../app/types';
+import type { PortPalGateway } from '../../lib/tauri';
 
 const port: PortInfo = {
   port: 3000,
@@ -76,7 +77,7 @@ describe('PortInspector', () => {
     expect(onKill).toHaveBeenCalledWith(port);
   });
 
-  it('shows Restart only for killed, restartable ports and disables it while pending', () => {
+  it('shows Restart only for killed, restartable ports and disables it while pending', async () => {
     const { onRestart } = renderInspector({
       killed: true,
       restarting: new Set([port.pid]),
@@ -85,6 +86,8 @@ describe('PortInspector', () => {
     expect(screen.queryByRole('button', { name: 'Kill Process' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Restart Process' })).toBeDisabled();
     expect(onRestart).not.toHaveBeenCalled();
+    // Wait for env to settle
+    await screen.findByRole('complementary');
   });
 
   it('sends restart requests for a killed, restartable port', async () => {
@@ -95,7 +98,7 @@ describe('PortInspector', () => {
     expect(onRestart).toHaveBeenCalledWith(port);
   });
 
-  it('disables the process action while killing or restarting is pending', () => {
+  it('disables the process action while killing or restarting is pending', async () => {
     const { rerender } = render(
       <PortInspector
         port={port}
@@ -129,5 +132,53 @@ describe('PortInspector', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Kill Process' })).toBeDisabled();
+    await screen.findByRole('complementary');
+  });
+
+  it('renders complete command, cwd, and fetched environment variables when present', async () => {
+    const mockGateway = {
+      getProcessEnv: vi.fn().mockResolvedValue({
+        DATABASE_URL: 'postgres://localhost:5432/mydb',
+        NODE_ENV: 'development',
+      }),
+    } as unknown as PortPalGateway;
+
+    renderInspector({
+      port: {
+        ...port,
+        start_cmd: 'node server.js --port 3000',
+        cwd: 'C:\\work\\PortPal\\backend',
+      },
+      gateway: mockGateway,
+    });
+
+    expect(screen.getByText('Command')).toBeVisible();
+    expect(screen.getByText('node server.js --port 3000')).toBeVisible();
+    expect(screen.getByText('CWD')).toBeVisible();
+    expect(screen.getByText('C:\\work\\PortPal\\backend')).toBeVisible();
+
+    expect(await screen.findByText('Environment Variables')).toBeVisible();
+    expect(await screen.findByText('DATABASE_URL')).toBeInTheDocument();
+    expect(await screen.findByText('postgres://localhost:5432/mydb')).toBeInTheDocument();
+    expect(await screen.findByText('NODE_ENV')).toBeInTheDocument();
+    expect(mockGateway.getProcessEnv).toHaveBeenCalledWith(port.pid);
+  });
+
+  it('indicates restricted OS policy when environment variables are unavailable', async () => {
+    const mockGateway = {
+      getProcessEnv: vi.fn().mockResolvedValue(null),
+    } as unknown as PortPalGateway;
+
+    renderInspector({
+      port,
+      gateway: mockGateway,
+    });
+
+    expect(await screen.findByText('Environment Variables')).toBeVisible();
+    expect(await screen.findByText('Restricted')).toBeVisible();
+    expect(
+      await screen.findByText('Environment variables restricted by OS security policy.'),
+    ).toBeInTheDocument();
+    expect(mockGateway.getProcessEnv).toHaveBeenCalledWith(port.pid);
   });
 });

@@ -40,6 +40,7 @@ pub struct PortInfo {
     pub protocol: String,
     /// Display only: never parse or execute this joined command line.
     pub start_cmd: Option<String>,
+    pub cwd: Option<String>,
 }
 
 // ─── Entry point (platform router) ───────────────────────────────────────────
@@ -271,6 +272,44 @@ pub fn try_scan_ports() -> Result<Vec<PortInfo>, ScanError> {
     Ok(ports)
 }
 
+/// Fetches environment variables on-demand for a single PID.
+///
+/// Kept out of the 2s broadcast loop to prevent serializing large process environments
+/// into every scan tick. Returns `Ok(None)` if access is restricted by OS security policy
+/// (e.g. system services or processes running as another user).
+pub fn get_process_env(pid: u32) -> Result<Option<HashMap<String, String>>, String> {
+    if is_reserved_pid(pid) || pid > i32::MAX as u32 {
+        return Ok(None);
+    }
+
+    let mut sys = System::new();
+    sys.refresh_processes();
+
+    let process = match sys.process(sysinfo::Pid::from(pid as usize)) {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    let environ = process.environ();
+    if environ.is_empty() {
+        // Either empty or restricted by OS
+        return Ok(None);
+    }
+
+    let mut map = HashMap::new();
+    for var in environ {
+        if let Some((k, v)) = var.split_once('=') {
+            map.insert(k.to_string(), v.to_string());
+        }
+    }
+
+    if map.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(map))
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct KillError {
     pub code: &'static str,
@@ -456,6 +495,7 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortI
         let mut process_name = format!("PID {}", pid);
         let mut project_path = None;
         let mut start_cmd = None;
+        let mut cwd_str = None;
 
         if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
             let p_name = process.name().to_string();
@@ -471,6 +511,7 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortI
             }
 
             if let Some(cwd) = process.cwd() {
+                cwd_str = Some(cwd.to_string_lossy().to_string());
                 project_path = find_project_root(cwd).map(|p| p.to_string_lossy().to_string());
             }
 
@@ -498,6 +539,7 @@ fn scan_windows(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortI
             project_name,
             protocol: "TCP".into(),
             start_cmd,
+            cwd: cwd_str,
         });
     }
 
@@ -726,6 +768,7 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo
 
         let mut project_path = None;
         let mut start_cmd = None;
+        let mut cwd_str = None;
 
         if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
             let sys_name = process.name().to_string();
@@ -734,6 +777,7 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo
             }
 
             if let Some(cwd) = process.cwd() {
+                cwd_str = Some(cwd.to_string_lossy().to_string());
                 project_path = find_project_root(cwd).map(|p| p.to_string_lossy().to_string());
             }
 
@@ -763,6 +807,7 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo
             project_name: None,
             protocol: "TCP".into(),
             start_cmd,
+            cwd: cwd_str,
         });
     }
 
@@ -773,6 +818,9 @@ fn scan_unix(sys: &System, trusted: &mut TrustedLaunches) -> Result<Vec<PortInfo
         let cwds = resolve_cwds(&needs_cwd);
         for port in ports.iter_mut().filter(|p| p.project_path.is_none()) {
             if let Some(cwd) = cwds.get(&port.pid) {
+                if port.cwd.is_none() {
+                    port.cwd = Some(cwd.to_string_lossy().to_string());
+                }
                 // `find_project_root` is memoized, so listeners sharing a
                 // project directory probe the filesystem only once.
                 port.project_path = find_project_root(cwd).map(|p| p.to_string_lossy().to_string());
@@ -1451,6 +1499,7 @@ mod tests {
             project_name: None,
             protocol: "TCP".into(),
             start_cmd: None,
+            cwd: None,
         }
     }
 

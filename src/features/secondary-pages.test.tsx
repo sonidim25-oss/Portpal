@@ -415,6 +415,7 @@ describe('secondary pages', () => {
       getPortTraffic: vi.fn().mockResolvedValue({}),
       killProcess: vi.fn().mockResolvedValue(undefined),
       restartProcess: vi.fn().mockResolvedValue(undefined),
+      getProcessEnv: vi.fn().mockResolvedValue(null),
       getAutostart: vi.fn().mockResolvedValue(false),
       setAutostart: vi.fn().mockResolvedValue(undefined),
       checkUpdate: vi.fn().mockResolvedValue(null),

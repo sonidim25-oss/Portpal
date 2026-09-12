@@ -131,3 +131,86 @@
   max-width: none;
   margin: 16px 20px;
 }
+
+.port-inspector__code-block {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--surface-app);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow-y: auto;
+  user-select: text;
+}
+
+.port-inspector__env-details {
+  margin-top: 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  background: var(--surface-app);
+  overflow: hidden;
+}
+
+.port-inspector__env-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  background: var(--surface-primary);
+  transition: background var(--transition-fast);
+}
+
+.port-inspector__env-summary:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.port-inspector__env-count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.port-inspector__env-list {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-default);
+}
+
+.port-inspector__env-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.port-inspector__env-key {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.port-inspector__env-val {
+  color: var(--text-primary);
+  padding-left: 8px;
+}
+
+.port-inspector__env-restricted {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}

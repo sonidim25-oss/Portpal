@@ -304,6 +304,7 @@ mod tests {
             project_name: None,
             protocol: "TCP".into(),
             start_cmd: None,
+            cwd: None,
         }
     }
 
