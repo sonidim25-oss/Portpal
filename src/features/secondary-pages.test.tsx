@@ -408,24 +408,30 @@ describe('secondary pages', () => {
     expect(onFontScale).toHaveBeenCalledWith(1.15);
   });
 
-  it('loads autostart state from gateway on mount when uncontrolled', async () => {
-    localStorage.clear();
-    const getAutostart = vi.fn().mockResolvedValue(true);
-    const setAutostart = vi.fn().mockResolvedValue(undefined);
-    const gateway: PortPalGateway = {
+  function createSettingsGateway(overrides: Partial<PortPalGateway> = {}): PortPalGateway {
+    return {
       getPorts: vi.fn().mockResolvedValue([]),
       getPortEvents: vi.fn().mockResolvedValue([]),
       getPortTraffic: vi.fn().mockResolvedValue({}),
       killProcess: vi.fn().mockResolvedValue(undefined),
       restartProcess: vi.fn().mockResolvedValue(undefined),
-      getAutostart,
-      setAutostart,
+      getAutostart: vi.fn().mockResolvedValue(false),
+      setAutostart: vi.fn().mockResolvedValue(undefined),
+      checkUpdate: vi.fn().mockResolvedValue(null),
+      installUpdate: vi.fn().mockResolvedValue(undefined),
       onPortsUpdated: vi.fn().mockResolvedValue(() => {}),
       onPortEvents: vi.fn().mockResolvedValue(() => {}),
       onScanDegraded: vi.fn().mockResolvedValue(() => {}),
       onScanRecovered: vi.fn().mockResolvedValue(() => {}),
       onScanCompleted: vi.fn().mockResolvedValue(() => {}),
+      ...overrides,
     };
+  }
+
+  it('loads autostart state from gateway on mount when uncontrolled', async () => {
+    localStorage.clear();
+    const getAutostart = vi.fn().mockResolvedValue(true);
+    const gateway = createSettingsGateway({ getAutostart });
 
     render(<SettingsPage fontScale={1} onFontScale={vi.fn()} gateway={gateway} />);
 
@@ -439,20 +445,7 @@ describe('secondary pages', () => {
     const user = userEvent.setup();
     const getAutostart = vi.fn().mockResolvedValue(false);
     const setAutostart = vi.fn().mockResolvedValue(undefined);
-    const gateway: PortPalGateway = {
-      getPorts: vi.fn().mockResolvedValue([]),
-      getPortEvents: vi.fn().mockResolvedValue([]),
-      getPortTraffic: vi.fn().mockResolvedValue({}),
-      killProcess: vi.fn().mockResolvedValue(undefined),
-      restartProcess: vi.fn().mockResolvedValue(undefined),
-      getAutostart,
-      setAutostart,
-      onPortsUpdated: vi.fn().mockResolvedValue(() => {}),
-      onPortEvents: vi.fn().mockResolvedValue(() => {}),
-      onScanDegraded: vi.fn().mockResolvedValue(() => {}),
-      onScanRecovered: vi.fn().mockResolvedValue(() => {}),
-      onScanCompleted: vi.fn().mockResolvedValue(() => {}),
-    };
+    const gateway = createSettingsGateway({ getAutostart, setAutostart });
 
     render(<SettingsPage fontScale={1} onFontScale={vi.fn()} gateway={gateway} />);
 
@@ -469,20 +462,7 @@ describe('secondary pages', () => {
     const user = userEvent.setup();
     const getAutostart = vi.fn().mockResolvedValue(false);
     const setAutostart = vi.fn().mockRejectedValue(new Error('registry access denied'));
-    const gateway: PortPalGateway = {
-      getPorts: vi.fn().mockResolvedValue([]),
-      getPortEvents: vi.fn().mockResolvedValue([]),
-      getPortTraffic: vi.fn().mockResolvedValue({}),
-      killProcess: vi.fn().mockResolvedValue(undefined),
-      restartProcess: vi.fn().mockResolvedValue(undefined),
-      getAutostart,
-      setAutostart,
-      onPortsUpdated: vi.fn().mockResolvedValue(() => {}),
-      onPortEvents: vi.fn().mockResolvedValue(() => {}),
-      onScanDegraded: vi.fn().mockResolvedValue(() => {}),
-      onScanRecovered: vi.fn().mockResolvedValue(() => {}),
-      onScanCompleted: vi.fn().mockResolvedValue(() => {}),
-    };
+    const gateway = createSettingsGateway({ getAutostart, setAutostart });
 
     render(<SettingsPage fontScale={1} onFontScale={vi.fn()} gateway={gateway} />);
 
@@ -492,5 +472,75 @@ describe('secondary pages', () => {
     await user.click(toggle);
     expect(setAutostart).toHaveBeenCalledWith(true);
     await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+  });
+
+  it('checks for updates and reports when PortPal is up to date', async () => {
+    const user = userEvent.setup();
+    const checkUpdate = vi.fn().mockResolvedValue(null);
+    const gateway = createSettingsGateway({ checkUpdate });
+
+    render(
+      <SettingsPage fontScale={1} onFontScale={vi.fn()} currentVersion="0.5.0" gateway={gateway} />,
+    );
+
+    expect(screen.getByText('Software updates')).toBeInTheDocument();
+    expect(screen.getByText('PortPal v0.5.0')).toBeInTheDocument();
+
+    const checkBtn = screen.getByRole('button', { name: 'Check for updates' });
+    await user.click(checkBtn);
+
+    expect(checkUpdate).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.getByText('PortPal is up to date (v0.5.0).')).toBeInTheDocument(),
+    );
+  });
+
+  it('shows available update details and triggers install', async () => {
+    const user = userEvent.setup();
+    const updateInfo = {
+      version: '0.5.1',
+      currentVersion: '0.5.0',
+      body: 'Performance improvements and bug fixes',
+      date: '2026-09-12T12:00:00Z',
+    };
+    const checkUpdate = vi.fn().mockResolvedValue(updateInfo);
+    const installUpdate = vi.fn().mockResolvedValue(undefined);
+    const gateway = createSettingsGateway({ checkUpdate, installUpdate });
+
+    render(
+      <SettingsPage fontScale={1} onFontScale={vi.fn()} currentVersion="0.5.0" gateway={gateway} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Check for updates' }));
+
+    await waitFor(() => expect(screen.getByText('Version 0.5.1 is available')).toBeInTheDocument());
+    expect(screen.getByText('2026-09-12')).toBeInTheDocument();
+    expect(screen.getByText('Performance improvements and bug fixes')).toBeInTheDocument();
+
+    const installBtn = screen.getByRole('button', {
+      name: 'Download & install update',
+    });
+    await user.click(installBtn);
+    expect(installUpdate).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.getByText(/Downloading and installing update/)).toBeInTheDocument(),
+    );
+  });
+
+  it('displays error when update check fails', async () => {
+    const user = userEvent.setup();
+    const checkUpdate = vi
+      .fn()
+      .mockRejectedValue(new Error('Network offline or endpoint unreachable'));
+    const gateway = createSettingsGateway({ checkUpdate });
+
+    render(
+      <SettingsPage fontScale={1} onFontScale={vi.fn()} currentVersion="0.5.0" gateway={gateway} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Check for updates' }));
+    await waitFor(() =>
+      expect(screen.getByText('Network offline or endpoint unreachable')).toBeInTheDocument(),
+    );
   });
 });

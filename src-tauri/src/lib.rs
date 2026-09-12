@@ -5,8 +5,10 @@ mod netaddr;
 mod scanner;
 mod taxonomy;
 mod tray;
+mod updater;
 
 use std::collections::HashMap;
+use tauri::Manager;
 
 /// Runs blocking work on the async runtime's blocking pool.
 ///
@@ -84,9 +86,20 @@ async fn set_autostart(enabled: bool) -> Result<(), String> {
         .unwrap_or_else(Err)
 }
 
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<Option<updater::UpdateMetadata>, String> {
+    updater::check_update(&app).await
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    updater::install_update(&app).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_ports,
             kill_process,
@@ -94,9 +107,12 @@ pub fn run() {
             get_port_events,
             get_port_traffic,
             get_autostart,
-            set_autostart
+            set_autostart,
+            check_update,
+            install_update
         ])
         .setup(|app| {
+            app.manage(updater::PendingUpdate::new());
             // Preflight: confirm every external tool this platform needs
             // actually works before the UI reports empty data. Both capabilities
             // are checked, because they are not always the same binary: Linux

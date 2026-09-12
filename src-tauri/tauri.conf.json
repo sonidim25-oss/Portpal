@@ -36,6 +36,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["nsis", "appimage"],
     "icon": [
       "icons/32x32.png",
@@ -44,5 +45,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM2MTU2RjM2NkE0QUE3NEMKUldSTXAwcHFObThWTnNmNVNxMUh2QXBKSDlRYjdSeStmeDJHMmdDQ010a0NxT1JDY1VzVGtRNmgK",
+      "endpoints": [
+        "https://github.com/sonidim25-oss/Portpal/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

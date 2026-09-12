@@ -25,6 +25,8 @@ function createGateway(overrides: Partial<PortPalGateway> = {}): PortPalGateway 
     restartProcess: vi.fn().mockResolvedValue(undefined),
     getAutostart: vi.fn().mockResolvedValue(false),
     setAutostart: vi.fn().mockResolvedValue(undefined),
+    checkUpdate: vi.fn().mockResolvedValue(null),
+    installUpdate: vi.fn().mockResolvedValue(undefined),
     onPortsUpdated: vi.fn().mockResolvedValue(() => {}),
     onPortEvents: vi.fn().mockResolvedValue(() => {}),
     onScanDegraded: vi.fn().mockResolvedValue(() => {}),

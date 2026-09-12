@@ -422,6 +422,37 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+.secondary-update-box {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.secondary-update-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.secondary-update-notes {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  margin: 0;
+}
+.secondary-update-status {
+  margin-top: 10px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.secondary-update-error {
+  margin-top: 10px;
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}
 @media (max-width: 900px) {
   .secondary-page {
     padding: 16px;

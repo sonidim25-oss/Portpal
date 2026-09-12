@@ -10,6 +10,13 @@ export interface ScanError {
   message: string;
 }
 
+export interface UpdateMetadata {
+  version: string;
+  currentVersion: string;
+  body?: string;
+  date?: string;
+}
+
 export interface PortPalGateway {
   getPorts(): Promise<PortInfo[]>;
   getPortEvents(): Promise<PortEvent[]>;
@@ -18,6 +25,8 @@ export interface PortPalGateway {
   restartProcess(port: number, pid: number): Promise<void>;
   getAutostart(): Promise<boolean>;
   setAutostart(enabled: boolean): Promise<void>;
+  checkUpdate(): Promise<UpdateMetadata | null>;
+  installUpdate(): Promise<void>;
   onPortsUpdated(handler: (ports: PortInfo[]) => void): Promise<() => void>;
   onPortEvents(handler: (events: PortEvent[]) => void): Promise<() => void>;
   onScanDegraded(handler: (error: ScanError) => void): Promise<() => void>;
@@ -37,6 +46,8 @@ export const tauriPortPalGateway: PortPalGateway = {
   restartProcess: (port, pid) => invoke<void>('restart_process', { port, pid }),
   getAutostart: () => invoke<boolean>('get_autostart'),
   setAutostart: (enabled) => invoke<void>('set_autostart', { enabled }),
+  checkUpdate: () => invoke<UpdateMetadata | null>('check_update'),
+  installUpdate: () => invoke<void>('install_update'),
   onPortsUpdated: (handler) =>
     listen<PortInfo[]>('ports-updated', (event) => handler(event.payload)),
   onPortEvents: (handler) => listen<PortEvent[]>('port-events', (event) => handler(event.payload)),

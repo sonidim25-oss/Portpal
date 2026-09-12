@@ -21,12 +21,16 @@ jobs:
             os: windows
             target: x86_64-pc-windows-msvc
             artifact: portpal-windows-setup
-            path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            path: |
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.sig
           - platform: ubuntu-22.04
             os: linux
             target: x86_64-unknown-linux-gnu
             artifact: portpal-linux-appimage
-            path: src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
+            path: |
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.sig
 
     runs-on: ${{ matrix.platform }}
 
@@ -66,7 +70,7 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.path }}
-          if-no-files-found: error
+          if-no-files-found: warn
 
   # Create a GitHub Release with all artifacts when a tag is pushed
   release:
@@ -77,10 +81,24 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Generate latest.json updater manifest
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node .github/scripts/generate-latest-manifest.cjs
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -90,7 +108,10 @@ jobs:
           prerelease: false
           make_latest: true
           generate_release_notes: true
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           files: |
             artifacts/portpal-windows-setup/*.exe
+            artifacts/portpal-windows-setup/*.sig
             artifacts/portpal-linux-appimage/*.AppImage
+            artifacts/portpal-linux-appimage/*.sig
+            latest.json
