@@ -48,7 +48,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM2MTU2RjM2NkE0QUE3NEMKUldSTXAwcHFObThWTnNmNVNxMUh2QXBKSDlRYjdSeStmeDJHMmdDQ010a0NxT1JDY1VzVGtRNmgK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk2MzgyQjkwNDZDQzdCNjYKUldSbWU4eEdrQ3M0bHQxRjVxQnY5MkFDVzJCNGZGWStIdmNacVZiN1lBNVJBcGFjNXFRZ0tXdk8K",
       "endpoints": [
         "https://github.com/sonidim25-oss/Portpal/releases/latest/download/latest.json"
       ],
