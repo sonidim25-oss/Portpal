@@ -474,6 +474,27 @@ describe('secondary pages', () => {
     await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
   });
 
+  // App checks once at launch and lights a dot on the Settings nav item. If
+  // following that dot landed on an idle "Check for updates" button, the user
+  // would have to re-run a check that already succeeded.
+  it('shows the launch-time result without a second check', async () => {
+    const checkUpdate = vi.fn().mockResolvedValue(null);
+    const gateway = createSettingsGateway({ checkUpdate });
+
+    render(
+      <SettingsPage
+        fontScale={1}
+        onFontScale={vi.fn()}
+        currentVersion="0.5.1"
+        initialUpdate={{ version: '0.5.2', currentVersion: '0.5.1' }}
+        gateway={gateway}
+      />,
+    );
+
+    expect(screen.getByText('Version 0.5.2 is available')).toBeInTheDocument();
+    expect(checkUpdate).not.toHaveBeenCalled();
+  });
+
   it('checks for updates and reports when PortPal is up to date', async () => {
     const user = userEvent.setup();
     const checkUpdate = vi.fn().mockResolvedValue(null);

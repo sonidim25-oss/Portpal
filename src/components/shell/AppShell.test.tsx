@@ -49,6 +49,41 @@ describe('AppShell', () => {
     expect(screen.getByRole('button', { name: 'Minimize' })).toBeVisible();
   });
 
+  it('leaves the navigation unmarked when no update is pending', () => {
+    render(
+      <AppShell page="ports" onNavigate={() => {}} ports={ports} lastScanAt={Date.now()}>
+        <div>Ports content</div>
+      </AppShell>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /available/ })).toBeNull();
+  });
+
+  // The dot is the only launch-time signal that an update exists, and it is
+  // invisible to a screen reader, so the version has to reach the accessible
+  // name as well.
+  it('marks Settings with the pending version when an update is available', () => {
+    render(
+      <AppShell
+        page="ports"
+        onNavigate={() => {}}
+        ports={ports}
+        lastScanAt={Date.now()}
+        updateVersion="0.5.2"
+      >
+        <div>Ports content</div>
+      </AppShell>,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Settings (version 0.5.2 available)' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
+    // Only Settings carries it; the other destinations stay untouched.
+    expect(screen.getByRole('button', { name: 'Ports' })).toBeVisible();
+  });
+
   it('keeps all existing destinations in the reference navigation order', () => {
     render(
       <AppShell page="ports" onNavigate={() => {}} ports={ports} lastScanAt={Date.now() - 2_000}>

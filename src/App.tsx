@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import './features/secondary-pages.css';
 import { usePortPalData } from './app/usePortPalData';
+import { useUpdateCheck } from './app/useUpdateCheck';
 import type { NavPage } from './app/types';
 import { AppShell } from './components/shell/AppShell';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -24,6 +25,10 @@ function loadFontScale(): number {
 export default function App() {
   const [page, setPage] = useState<NavPage>('ports');
   const [fontScale, setFontScale] = useState(loadFontScale);
+  // Checked once per launch and never interrupts: it only lights the dot on
+  // the Settings item and seeds that page so the install control is already
+  // showing when the user follows the dot.
+  const update = useUpdateCheck();
   const {
     ports,
     events,
@@ -66,7 +71,13 @@ export default function App() {
 
   return (
     <>
-      <AppShell page={page} onNavigate={setPage} ports={ports} lastScanAt={lastScanAt}>
+      <AppShell
+        page={page}
+        onNavigate={setPage}
+        ports={ports}
+        lastScanAt={lastScanAt}
+        updateVersion={update?.version ?? null}
+      >
         {page === 'dashboard' && (
           <DashboardPage
             ports={ports}
@@ -118,7 +129,9 @@ export default function App() {
             onRefresh={refreshEvents}
           />
         )}
-        {page === 'settings' && <SettingsPage fontScale={fontScale} onFontScale={setFontScale} />}
+        {page === 'settings' && (
+          <SettingsPage fontScale={fontScale} onFontScale={setFontScale} initialUpdate={update} />
+        )}
       </AppShell>
       {/* Single slot, latest-wins: see showToast in usePortPalData. */}
       {toast && (

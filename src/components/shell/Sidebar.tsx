@@ -7,6 +7,8 @@ type SidebarProps = {
   onNavigate: (page: NavPage) => void;
   ports: PortInfo[];
   lastScanAt: number | null;
+  /** Version of a pending update, or null. Marks the Settings item. */
+  updateVersion?: string | null;
 };
 
 type NavigationItem = {
@@ -24,7 +26,13 @@ const navigationItems: NavigationItem[] = [
   { page: 'settings', label: 'Settings', icon: <SettingsIcon /> },
 ];
 
-export function Sidebar({ page, onNavigate, ports, lastScanAt }: SidebarProps) {
+export function Sidebar({
+  page,
+  onNavigate,
+  ports,
+  lastScanAt,
+  updateVersion = null,
+}: SidebarProps) {
   return (
     <aside className="shell-sidebar">
       <div className="shell-sidebar__brand">
@@ -36,19 +44,26 @@ export function Sidebar({ page, onNavigate, ports, lastScanAt }: SidebarProps) {
       <nav className="shell-sidebar__navigation" aria-label="Primary navigation">
         {navigationItems.map((item) => {
           const active = page === item.page;
+          // The dot rides the Settings item because that is where the install
+          // control lives; naming the version in the label keeps it available
+          // to screen readers, which cannot see the dot.
+          const marked = item.page === 'settings' && updateVersion !== null;
           return (
             <button
               key={item.page}
               type="button"
               className="shell-sidebar__navigation-button"
               aria-current={active ? 'page' : undefined}
-              aria-label={item.label}
+              aria-label={
+                marked ? `${item.label} (version ${updateVersion} available)` : item.label
+              }
               onClick={() => onNavigate(item.page)}
             >
               <span className="shell-sidebar__icon" aria-hidden="true">
                 {item.icon}
               </span>
               <span className="shell-sidebar__label">{item.label}</span>
+              {marked && <span className="shell-sidebar__dot" aria-hidden="true" />}
             </button>
           );
         })}
